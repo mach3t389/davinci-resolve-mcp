@@ -43,3 +43,27 @@ Begin with inspection, then explicitly request a timeline copy before testing ma
 Request human confirmation before introducing or using any destructive operation in future versions.
 
 This repository excludes virtual environments, personal Codex configuration, credentials, logs, test results, and media/Resolve project files. No deployment workflow is configured. Never commit client footage or project data.
+
+## Exact cuts and gaps
+
+Three additional tools implement frame-exact cuts through Resolve's official OTIO export/import API:
+
+- `preview_cut_plan(timeline_id, ranges, mode, origin_offset)` validates the source and returns a session-local preview token without changing the project.
+- `create_cut_timeline(plan_id, confirmation)` imports a **new** timeline and verifies the result. The source timeline is never edited or deleted.
+- `verify_cut_timeline(timeline_id)` checks a result again during the same server session.
+
+A range is either `{"start":"0:16","end":"0:29","label":"Arrival"}` or `{"start_frame":384,"end_frame":696}`. Timestamps are elapsed M:SS or H:MM:SS (decimal seconds accepted), rounded half-up to the timeline frame rate. The end is exclusive: a cut at 0:29 excludes the frame starting at 0:29 from the selected range. `origin_offset` is the integer frame offset of a part's beginning relative to timeline start. Camera/part mapping must be checked by the human; ambiguous editorial notes must not be invented as exact ranges.
+
+`split_all` cuts at every range boundary and retains all passages. `keep_with_gaps` retains the selections at their original positions and replaces other passages with gaps, without ripple. Obtain explicit human approval of the displayed ranges before using that mode, then pass `confirmation="CONFIRM <plan_id>"`. This token is an acknowledgement, not independent proof of human consent; the calling assistant must enforce approval.
+
+Plans expire when the server restarts. Changes to the source invalidate a preview. Once import starts, the token cannot be retried, including after failure. Partial/new timelines are preserved for inspection, with no automatic deletion. Restore of the previous timeline selection is reported separately.
+
+Only raw, flat video/audio timelines with online file media are supported. Nested/multicam compositions, transitions, speed effects, subtitles, and configured clip effects are rejected. OTIO cannot guarantee preservation of every Resolve grade, effect, automation or project feature: use an ungraded preparation timeline. Verification covers timeline/source timing, media paths, frame rate, start position, track structure, linked groups, and the source snapshot/export. Review picture and sound before using the result.
+
+Development validation on Resolve Studio 21.1: two selection ranges produced five video and five linked audio segments, with frame positions and source in-points verified. Source unchanged. Gap placement is covered by automated tests; applying gap mode to client footage requires human approval and a live review.
+
+Run offline tests with:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -p "test_*.py"
+```

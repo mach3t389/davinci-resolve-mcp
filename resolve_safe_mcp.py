@@ -105,6 +105,38 @@ def add_test_marker(timeline_id: str, frame_offset: int, name: str = 'MCP test',
         return dict(success=bool(ok), verified=verified, timeline_id=timeline_id,
                     frame_offset=frame_offset, marker=after.get(frame_offset))
 
+from edit_bridge import EditBridge
+edits = EditBridge(project, find, summary)
+
+@mcp.tool(annotations=READ)
+def preview_cut_plan(timeline_id: str, ranges: list[dict], mode: str = 'split_all', origin_offset: int = 0) -> dict:
+    """Preview exact cuts without changing Resolve. Ranges have start/end elapsed
+    timestamps (M:SS or H:MM:SS) or integer start_frame/end_frame, end exclusive.
+    origin_offset locates the beginning of a source part within this timeline.
+    split_all retains every passage; keep_with_gaps omits outside ranges without ripple.
+    Supports raw, flat audio/video only; rejects unsupported/offline media and effects.
+    Returns a session-local plan_id and all planned segments for human review.
+    """
+    with lock:
+        return edits.preview(timeline_id, ranges, mode, origin_offset)
+
+@mcp.tool(annotations=WRITE)
+def create_cut_timeline(plan_id: str, confirmation: str = '') -> dict:
+    """Create a NEW timeline from a reviewed preview; never edits/deletes the source.
+    For keep_with_gaps, obtain human approval first, then use confirmation='CONFIRM <plan_id>'.
+    A plan is single-use once import begins. Inspect partial results after any error,
+    never retry blindly. Verifies frame positions, sources and original snapshot.
+    Original selection is restored; the new timeline remains available for inspection.
+    """
+    with lock:
+        return edits.create(plan_id, confirmation)
+
+@mcp.tool(annotations=READ)
+def verify_cut_timeline(timeline_id: str) -> dict:
+    """Recheck the timing/media of a cut output created in this server session."""
+    with lock:
+        return edits.verify(timeline_id)
+
 if __name__ == '__main__':
     if '--doctor' in sys.argv:
         try:

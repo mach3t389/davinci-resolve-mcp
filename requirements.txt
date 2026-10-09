@@ -1,1 +1,2 @@
 mcp==1.30.0
+opentimelineio==0.18.1

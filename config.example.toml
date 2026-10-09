@@ -1,6 +1,6 @@
 [mcp_servers.resolve_safe]
 command = 'C:/path/to/davinci-resolve-mcp/.venv/Scripts/python.exe'
 args = ['C:/path/to/davinci-resolve-mcp/resolve_safe_mcp.py']
-enabled_tools = ['inspect_project', 'inspect_timeline', 'duplicate_for_marker_test', 'add_test_marker']
+enabled_tools = ['inspect_project', 'inspect_timeline', 'duplicate_for_marker_test', 'add_test_marker', 'preview_cut_plan', 'create_cut_timeline', 'verify_cut_timeline']
 startup_timeout_sec = 20
 tool_timeout_sec = 60
