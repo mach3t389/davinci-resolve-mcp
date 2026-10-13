@@ -67,3 +67,18 @@ Run offline tests with:
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -p "test_*.py"
 ```
+
+## Native audio alignment (experimental, one pair at a time)
+
+- `inspect_sync_media`: read clip IDs, camera bins, audio channels and file availability.
+- `preview_sync_pair`: select a reference **audio timeline item ID** and one target media ID. Choose waveform or explicitly verified common timecode. No project writes.
+- `create_sync_pair_copy`: duplicate the source, append one linked target video/audio pair on new tracks, and call the installed native `AutoAlignClips` API. Never modifies the source timeline or deletes clips/media. Restores original timeline selection.
+- `inspect_sync_attempt`: read the current session's attempt state and partial copy ID. Plans are single-use once writes begin. After a timeout, inspect the project/status rather than resubmitting. Restarted sessions cannot recover old plan tokens; use timeline inspection and the returned copy ID.
+
+`inspect_timeline` includes item IDs and source frame ranges for choosing references. Folder labels identify angles; file timecodes are not assumed to be synchronized. This first implementation aligns one pair, not an entire bin or five cameras automatically.
+
+Resolve provides a boolean result, not a correlation confidence score. Native alignment can trim a target at timeline boundaries. Reports distinguish `technical_checks_passed`, `target_duration_preserved`, source-boundary changes, and `alignment_verified` (always false until external/human review). `ready_for_batch` is false. Validate picture/sound and drift before adding further angles. Pair timing/source mismatch is detected and reported; no automatic retry or cleanup occurs.
+
+Live test: the original preparation timeline was duplicated. Selecting reference audio plus target audio alone failed to move target video. Selecting reference audio plus **both** target video/audio aligned the pair consistently. Resolve trimmed 1284 frames from the target beginning, which lies before the reference timeline start. Existing copied items and original source snapshot remained unchanged. Test copies remain available; no clip/file/timeline was deleted. This verifies structural behavior, not acoustic correctness or drift over forty minutes.
+
+For long waveform analysis, the example configuration allows a 1200-second tool timeout. Keep the client session open for preview, execution and status. Always review the first pair before applying to further recordings.

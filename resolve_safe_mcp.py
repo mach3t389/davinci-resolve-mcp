@@ -61,7 +61,8 @@ def inspect_timeline(timeline_id: str) -> dict:
         tracks = []
         for kind in ('video', 'audio'):
             for i in range(1, t.GetTrackCount(kind) + 1):
-                clips = [dict(name=c.GetName(), start=c.GetStart(), end=c.GetEnd(),
+                clips = [dict(id=c.GetUniqueId(), name=c.GetName(), start=c.GetStart(), end=c.GetEnd(),
+                              source_start_frame=c.GetSourceStartFrame(), source_end_frame=c.GetSourceEndFrame(),
                               duration=c.GetDuration()) for c in (t.GetItemListInTrack(kind, i) or [])]
                 tracks.append(dict(kind=kind, index=i, clips=clips))
         return dict(**summary(t), tracks=tracks, markers=t.GetMarkers() or {})
@@ -136,6 +137,40 @@ def verify_cut_timeline(timeline_id: str) -> dict:
     """Recheck the timing/media of a cut output created in this server session."""
     with lock:
         return edits.verify(timeline_id)
+
+from sync_bridge import SyncBridge
+sync = SyncBridge(project, find, summary, edits)
+
+@mcp.tool(annotations=READ)
+def inspect_sync_media() -> dict:
+    """List media IDs, bins, audio availability and native sync capability. Read only."""
+    with lock:
+        return sync.inventory()
+
+@mcp.tool(annotations=READ)
+def preview_sync_pair(timeline_id: str, reference_audio_id: str, target_media_id: str, mode: str = 'waveform') -> dict:
+    """Preview ONE target against a reference audio timeline item, without changes.
+    Folder names identify angles; source timecode is used only when explicitly selected.
+    """
+    with lock:
+        return sync.preview(timeline_id, reference_audio_id, target_media_id, mode)
+
+@mcp.tool(annotations=WRITE)
+def create_sync_pair_copy(plan_id: str) -> dict:
+    """Execute a single-use sync preview on a fresh timeline copy only. No deletes.
+    Adds target on separate linked video/audio tracks, calls native AutoAlignClips,
+    checks original and existing copy items. Native alignment can trim target boundaries
+    at the copy's start; reports all source boundary changes. Always requires picture/sound review;
+    Resolve provides no confidence score. Never retry after timeout; inspect status.
+    """
+    with lock:
+        return sync.create(plan_id)
+
+@mcp.tool(annotations=READ)
+def inspect_sync_attempt(plan_id: str) -> dict:
+    """Read session sync attempt state and partial copy ID before any retry."""
+    with lock:
+        return sync.status(plan_id)
 
 if __name__ == '__main__':
     if '--doctor' in sys.argv:
