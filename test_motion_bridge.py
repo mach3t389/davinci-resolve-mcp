@@ -61,7 +61,20 @@ class MotionBridgeTest(unittest.TestCase):
         self.assertIs(self.p.pool.current, self.p.pool.root)  # selection restored
         result = self.bridge.replace_clip('m1', v2)
         self.assertTrue(result['verified'])
-        self.assertEqual(Path(result['previous_file']), v1.resolve())
+        archived = TMP / motion_bridge.ARCHIVE / 'Titre_v001.mov'
+        self.assertTrue(result['archived'])
+        self.assertEqual(Path(result['previous_file']), archived.resolve())
+        self.assertFalse(v1.exists())  # out/ keeps only the version Resolve uses
+
+    def test_undo_brings_archived_version_back_to_out(self):
+        v1, v2 = render('Undo_v001.mov'), render('Undo_v002.mov')
+        self.bridge.import_clip(v1)
+        first = self.bridge.replace_clip('m1', v2)
+        undo = self.bridge.replace_clip('m1', first['previous_file'])
+        self.assertTrue(undo['verified'])
+        self.assertEqual(Path(undo['file']), v1.resolve())
+        self.assertTrue(v1.exists())
+        self.assertTrue((TMP / motion_bridge.ARCHIVE / 'Undo_v002.mov').exists())
 
     def test_rejects_files_outside_render_folder(self):
         outside = Path(tempfile.mkdtemp()) / 'x.mov'
