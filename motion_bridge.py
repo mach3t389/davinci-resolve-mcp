@@ -83,6 +83,60 @@ class MotionBridge:
         return dict(media_id=item.GetMediaId(), name=item.GetName(), file=item.GetClipProperty('File Path'),
                     fps=item.GetClipProperty('FPS'), bin=BIN)
 
+    def place_on_copy(self, timeline, placements, copy_name):
+        """Duplicate `timeline`, add one new video track per distinct `track` name and put each Motion clip at its
+        frame (offset from timeline start). Existing tracks are never edited; the copy is checked against the source."""
+        _, p = self.project()
+        pool = p.GetMediaPool()
+        folder = self._bin(pool, create=False)
+        items = {pl['media_id']: self._item(folder, pl['media_id']) for pl in placements}
+        length = timeline.GetEndFrame() - timeline.GetStartFrame()
+        spans = {}
+        for pl in placements:
+            dur = int(items[pl['media_id']].GetClipProperty('Frames'))
+            if not 0 <= int(pl['frame']) < length:
+                raise ValueError(f"Frame {pl['frame']} is outside the timeline.")
+            for s, e in spans.get(pl['track'], []):
+                if pl['frame'] < e and s < pl['frame'] + dur:
+                    raise ValueError(f"Clips overlap on track {pl['track']!r} at frame {pl['frame']}.")
+            spans.setdefault(pl['track'], []).append((int(pl['frame']), int(pl['frame']) + dur))
+
+        def snapshot(t):
+            return [(kind, i, [(c.GetName(), c.GetStart(), c.GetEnd()) for c in (t.GetItemListInTrack(kind, i) or [])])
+                    for kind in ('video', 'audio') for i in range(1, t.GetTrackCount(kind) + 1)]
+
+        before = snapshot(timeline)
+        original = p.GetCurrentTimeline()
+        copy = timeline.DuplicateTimeline(copy_name)
+        if not copy or copy.GetUniqueId() == timeline.GetUniqueId():
+            raise RuntimeError('Resolve did not create the timeline copy.')
+        result = dict(copy_id=copy.GetUniqueId(), copy_name=copy.GetName(), placed=[], complete=False)
+        try:
+            p.SetCurrentTimeline(copy)  # AppendToTimeline targets the current timeline
+            tracks = {}
+            for name in dict.fromkeys(pl['track'] for pl in placements):
+                if not copy.AddTrack('video'):
+                    raise RuntimeError(f'Could not add track {name!r}.')
+                tracks[name] = copy.GetTrackCount('video')
+                copy.SetTrackName('video', tracks[name], name)
+            for pl in placements:
+                item = items[pl['media_id']]
+                record = copy.GetStartFrame() + int(pl['frame'])
+                made = pool.AppendToTimeline([{'mediaPoolItem': item, 'startFrame': 0, 'endFrame': int(item.GetClipProperty('Frames')) - 1,
+                                               'trackIndex': tracks[pl['track']], 'recordFrame': record, 'mediaType': 1}]) or []
+                ok = len(made) == 1 and made[0].GetStart() == record
+                result['placed'].append(dict(name=item.GetName(), track=pl['track'], frame=int(pl['frame']), verified=ok))
+                if not ok:
+                    raise RuntimeError(f"{item.GetName()} was not placed at frame {pl['frame']}.")
+            after = snapshot(copy)
+            result['existing_tracks_unchanged'] = [x for x in after if not (x[0] == 'video' and x[1] in tracks.values())] == before
+            result['markers_kept'] = len(copy.GetMarkers() or {}) == len(timeline.GetMarkers() or {})
+            result['complete'] = result['existing_tracks_unchanged'] and result['markers_kept']
+        finally:
+            if original:
+                p.SetCurrentTimeline(original)
+        return result
+
     def replace_clip(self, media_id, file_path):
         path = allowed(file_path)
         _, p = self.project()

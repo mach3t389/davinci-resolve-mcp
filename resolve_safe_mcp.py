@@ -225,6 +225,16 @@ def import_motion_clip(file_path: str) -> dict:
         return motion.import_clip(file_path)
 
 @mcp.tool(annotations=WRITE)
+def place_motion_clips(timeline_id: str, placements: list[dict], copy_name: str) -> dict:
+    """Duplicate a timeline (the source is never edited) and place "Motion" bin clips on NEW video tracks of the copy.
+    Each placement: {"media_id", "frame" (offset from timeline start), "track" (new track name)}.
+    Existing tracks, clips and markers are left as they are and checked afterwards; overlapping clips on a track are
+    rejected. Placement is overwrite on empty new tracks: nothing is rippled or moved. Original selection is restored."""
+    with lock:
+        _, p = project()
+        return motion.place_on_copy(find(p, timeline_id), placements, copy_name)
+
+@mcp.tool(annotations=WRITE)
 def replace_motion_clip(media_id: str, file_path: str) -> dict:
     """Relink a "Motion" bin clip to a newer render; every timeline use updates.
     Both old and new files must be in a Motion project's out folder. No file is deleted:
