@@ -42,7 +42,8 @@ def identity(p, t):
 
 def summary(t):
     return dict(id=t.GetUniqueId(), name=t.GetName(), start_frame=t.GetStartFrame(),
-                end_frame=t.GetEndFrame(), fps=t.GetSetting('timelineFrameRate'))
+                end_frame=t.GetEndFrame(), fps=t.GetSetting('timelineFrameRate'),
+                width=t.GetSetting('timelineResolutionWidth'), height=t.GetSetting('timelineResolutionHeight'))
 
 @mcp.tool(annotations=READ)
 def inspect_project() -> dict:
