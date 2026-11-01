@@ -82,3 +82,21 @@ Resolve provides a boolean result, not a correlation confidence score. Native al
 Live test: the original preparation timeline was duplicated. Selecting reference audio plus target audio alone failed to move target video. Selecting reference audio plus **both** target video/audio aligned the pair consistently. Resolve trimmed 1284 frames from the target beginning, which lies before the reference timeline start. Existing copied items and original source snapshot remained unchanged. Test copies remain available; no clip/file/timeline was deleted. This verifies structural behavior, not acoustic correctness or drift over forty minutes.
 
 For long waveform analysis, the example configuration allows a 1200-second tool timeout. Keep the client session open for preview, execution and status. Always review the first pair before applying to further recordings.
+
+## Edited reference timelines: section sync (experimental)
+
+A global offset is insufficient when the reference camera stops recording or its edit removes elapsed time. `preview_section_sync` groups reference video items by media identity and source-to-record mapping, and chooses matching reference audio. `create_section_sync_copy` analyzes each group independently on fresh copies, then attempts to append only the target portions corresponding to the reference video segments, at their existing record positions. It never moves or deletes the reference edit. `inspect_section_sync_attempt` exposes partial analysis copies and errors during the same server session. Plans are single-use once processing starts.
+
+The first implementation requires matching source/target/timeline FPS and chronologically ordered reference recordings. Later groups search the remainder of the target, retaining a ten-second overlap guard; this narrows the waveform search rather than estimating a final position. Resolve must still find the audio match. Native selection includes linked reference items and both linked target items.
+
+Live validation found the first recording section but native Resolve alignment returned false for the second, including with a bounded search and linked reference selection. Processing stopped before final assembly. No corrected multi-section timeline has been validated yet. Do not claim completion or use unproven offsets; use another audio-analysis method or human-confirmed corresponding source frames when native matching fails. Analysis copies remain for inspection and require explicit permission before deletion. Existing source snapshots and timeline selection were preserved.
+
+## Motion renders: import and relink
+
+Links Remotion renders to Resolve, like a dynamic link: each new render version replaces the clip everywhere it is used.
+
+- `list_motion_clips`: read media IDs and file paths in the Media Pool "Motion" bin.
+- `import_motion_clip(file_path)`: import one `.mov` render into the "Motion" bin. Timelines are not touched; place the clip manually once.
+- `replace_motion_clip(media_id, file_path)`: relink that clip to a newer render with the native `ReplaceClip`. All timeline uses update.
+
+Only `.mov` files under `MOTION_OUT_DIR` (environment variable, default `D:/Vibe Coding/Motion/out`) are accepted, and only clips whose current file is in that folder can be relinked. No file is deleted; replace back with the returned `previous_file` to undo. Render a new versioned file rather than overwriting one Resolve already uses.

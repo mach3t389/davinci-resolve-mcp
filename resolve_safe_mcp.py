@@ -148,12 +148,12 @@ def inspect_sync_media() -> dict:
         return sync.inventory()
 
 @mcp.tool(annotations=READ)
-def preview_sync_pair(timeline_id: str, reference_audio_id: str, target_media_id: str, mode: str = 'waveform') -> dict:
+def preview_sync_pair(timeline_id: str, reference_audio_id: str, target_media_id: str, mode: str = 'waveform', search_start_frame: int = 0) -> dict:
     """Preview ONE target against a reference audio timeline item, without changes.
     Folder names identify angles; source timecode is used only when explicitly selected.
     """
     with lock:
-        return sync.preview(timeline_id, reference_audio_id, target_media_id, mode)
+        return sync.preview(timeline_id, reference_audio_id, target_media_id, mode, search_start_frame)
 
 @mcp.tool(annotations=WRITE)
 def create_sync_pair_copy(plan_id: str) -> dict:
@@ -171,6 +171,65 @@ def inspect_sync_attempt(plan_id: str) -> dict:
     """Read session sync attempt state and partial copy ID before any retry."""
     with lock:
         return sync.status(plan_id)
+
+from section_sync import SectionSync
+section_sync = SectionSync(sync)
+
+@mcp.tool(annotations=READ)
+def preview_section_sync(timeline_id: str, target_media_id: str, reference_video_track: int = 1, reference_audio_track: int = 1) -> dict:
+    """Plan separate waveform mappings for camera-one recording sections and manual edits.
+    Source timeline stays authoritative. Requires matching FPS and original file media.
+    """
+    with lock:
+        return section_sync.preview(timeline_id,target_media_id,reference_video_track,reference_audio_track)
+
+@mcp.tool(annotations=WRITE)
+def create_section_sync_copy(plan_id: str) -> dict:
+    """Analyze each reference section on fresh copies; build bounded target segments on
+    a NEW copy without moving/removing any existing clips. Single-use plan, preserve
+    partial/analysis copies on error. Structural success requires subsequent acoustic review.
+    """
+    with lock:
+        return section_sync.create(plan_id)
+
+@mcp.tool(annotations=READ)
+def inspect_section_sync_attempt(plan_id: str) -> dict:
+    """Inspect session-local partial copies and section-sync status; never blind-retry."""
+    with lock:
+        return section_sync.status(plan_id)
+
+@mcp.tool(annotations=WRITE)
+def create_review_marker_copy(timeline_id: str, markers: list[dict], name: str = 'REVISION_CLIENT') -> dict:
+    """Duplicate a timeline and add reviewed duration markers only. Each marker has
+    integer frame/duration, color Green/Red/Yellow, name and note. Does not cut clips.
+    Reports partial copies on failure; inspect returned ID before any repeat."""
+    from review_markers import create_review_copy
+    with lock:
+        return create_review_copy(project, find, summary, edits, timeline_id, markers, name)
+
+from motion_bridge import MotionBridge
+motion = MotionBridge(project)
+
+@mcp.tool(annotations=READ)
+def list_motion_clips() -> dict:
+    """List clips in the Media Pool "Motion" bin with media IDs and file paths. Read only."""
+    with lock:
+        return motion.clips()
+
+@mcp.tool(annotations=WRITE)
+def import_motion_clip(file_path: str) -> dict:
+    """Import one Remotion render (.mov under MOTION_OUT_DIR) into the "Motion" bin.
+    Does not touch any timeline; place the clip on the timeline manually."""
+    with lock:
+        return motion.import_clip(file_path)
+
+@mcp.tool(annotations=WRITE)
+def replace_motion_clip(media_id: str, file_path: str) -> dict:
+    """Relink a "Motion" bin clip to a newer render; every timeline use updates.
+    Both old and new files must be under MOTION_OUT_DIR. No file is deleted:
+    replace back with previous_file to undo."""
+    with lock:
+        return motion.replace_clip(media_id, file_path)
 
 if __name__ == '__main__':
     if '--doctor' in sys.argv:
