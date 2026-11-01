@@ -99,4 +99,4 @@ Links Remotion renders to Resolve, like a dynamic link: each new render version 
 - `import_motion_clip(file_path)`: import one `.mov` render into the "Motion" bin. Timelines are not touched; place the clip manually once.
 - `replace_motion_clip(media_id, file_path)`: relink that clip to a newer render with the native `ReplaceClip`. All timeline uses update.
 
-Only `.mov` files under `MOTION_OUT_DIR` (environment variable, default `D:/Vibe Coding/Motion/out`) are accepted, and only clips whose current file is in that folder can be relinked. No file is deleted; replace back with the returned `previous_file` to undo. Render a new versioned file rather than overwriting one Resolve already uses.
+Only `.mov` files directly in the `out` folder of a Motion project are accepted: the project root must contain a `.motion-project` marker file. Projects can live anywhere (per video project, any drive or computer); no path is configured. Only clips whose current file satisfies the same rule can be relinked. No file is deleted; replace back with the returned `previous_file` to undo. Render a new versioned file rather than overwriting one Resolve already uses.

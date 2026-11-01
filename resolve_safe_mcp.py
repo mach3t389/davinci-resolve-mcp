@@ -219,7 +219,7 @@ def list_motion_clips() -> dict:
 
 @mcp.tool(annotations=WRITE)
 def import_motion_clip(file_path: str) -> dict:
-    """Import one Remotion render (.mov under MOTION_OUT_DIR) into the "Motion" bin.
+    """Import one Remotion render (<project>/out/*.mov, project marked by .motion-project) into the "Motion" bin.
     Does not touch any timeline; place the clip on the timeline manually."""
     with lock:
         return motion.import_clip(file_path)
@@ -227,7 +227,7 @@ def import_motion_clip(file_path: str) -> dict:
 @mcp.tool(annotations=WRITE)
 def replace_motion_clip(media_id: str, file_path: str) -> dict:
     """Relink a "Motion" bin clip to a newer render; every timeline use updates.
-    Both old and new files must be under MOTION_OUT_DIR. No file is deleted:
+    Both old and new files must be in a Motion project's out folder. No file is deleted:
     replace back with previous_file to undo."""
     with lock:
         return motion.replace_clip(media_id, file_path)

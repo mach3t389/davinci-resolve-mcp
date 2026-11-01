@@ -1,14 +1,13 @@
-"""Import and relink Remotion renders. Only files under MOTION_OUT_DIR, only clips in the Motion bin."""
-import os
+"""Import and relink Remotion renders. Only <project>/out/*.mov of a marked Motion project, only clips in the Motion bin."""
 from pathlib import Path
 
-ROOT = Path(os.environ.get('MOTION_OUT_DIR', 'D:/Vibe Coding/Motion/out')).resolve()
 BIN = 'Motion'
+MARKER = '.motion-project'  # created at the root of every Motion project; makes paths machine-independent
 
 def allowed(file_path):
     path = Path(file_path).resolve()
-    if path.suffix.lower() != '.mov' or ROOT not in path.parents:
-        raise ValueError(f'Only .mov renders under {ROOT} are allowed.')
+    if path.suffix.lower() != '.mov' or path.parent.name != 'out' or not (path.parent.parent / MARKER).is_file():
+        raise ValueError(f'Only .mov renders in the out folder of a Motion project (with {MARKER}) are allowed.')
     if not path.is_file():
         raise ValueError('Render file not found.')
     return path
@@ -41,7 +40,7 @@ class MotionBridge:
     def clips(self):
         _, p = self.project()
         folder = self._bin(p.GetMediaPool(), create=False)
-        return dict(bin=BIN, root=str(ROOT), clips=[dict(media_id=c.GetMediaId(), name=c.GetName(),
+        return dict(bin=BIN, clips=[dict(media_id=c.GetMediaId(), name=c.GetName(),
                     file=c.GetClipProperty('File Path')) for c in (folder.GetClipList() or [])])
 
     def import_clip(self, file_path):
@@ -68,7 +67,7 @@ class MotionBridge:
         _, p = self.project()
         item = self._item(self._bin(p.GetMediaPool(), create=False), media_id)
         before = item.GetClipProperty('File Path')
-        allowed(before)  # never relink a clip that did not come from the Motion renders folder
+        allowed(before)  # never relink a clip that did not come from a Motion project renders folder
         if same(before, path):
             raise ValueError('Clip already points to this file.')
         ok = item.ReplaceClip(str(path))

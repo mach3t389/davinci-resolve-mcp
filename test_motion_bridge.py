@@ -1,11 +1,13 @@
-import os
 import tempfile
 import unittest
 from pathlib import Path
 
-TMP = Path(tempfile.mkdtemp())
-os.environ['MOTION_OUT_DIR'] = str(TMP)
-import motion_bridge  # noqa: E402
+import motion_bridge
+
+PROJECT = Path(tempfile.mkdtemp())
+(PROJECT / motion_bridge.MARKER).write_text('')
+TMP = PROJECT / 'out'
+TMP.mkdir()
 
 class Item:
     def __init__(self, path):
@@ -64,8 +66,15 @@ class MotionBridgeTest(unittest.TestCase):
     def test_rejects_files_outside_render_folder(self):
         outside = Path(tempfile.mkdtemp()) / 'x.mov'
         outside.write_bytes(b'x')
-        with self.assertRaises(ValueError):
-            self.bridge.import_clip(outside)
+        unmarked = Path(tempfile.mkdtemp()) / 'out'
+        unmarked.mkdir()
+        (unmarked / 'y.mov').write_bytes(b'x')
+        nested = PROJECT / 'design'
+        nested.mkdir(exist_ok=True)
+        (nested / 'z.mov').write_bytes(b'x')
+        for path in (outside, unmarked / 'y.mov', nested / 'z.mov'):
+            with self.assertRaises(ValueError):
+                self.bridge.import_clip(path)
 
     def test_rejects_duplicate_import(self):
         v1 = render('Dup_v001.mov')
