@@ -3,6 +3,7 @@
 out/ holds the versions Resolve currently uses; replaced versions move to out/anciennes-versions/ once Resolve
 no longer points to them (never before, so no clip goes offline)."""
 import shutil
+import time
 from pathlib import Path
 
 BIN = 'Motion'
@@ -113,6 +114,15 @@ class MotionBridge:
         result = dict(copy_id=copy.GetUniqueId(), copy_name=copy.GetName(), placed=[], complete=False)
         try:
             p.SetCurrentTimeline(copy)  # AppendToTimeline targets the current timeline
+            # Resolve switches asynchronously: adding a track right away was refused once ("Could not add track").
+            for _ in range(20):
+                now = p.GetCurrentTimeline()
+                if now and now.GetUniqueId() == copy.GetUniqueId():
+                    break
+                time.sleep(0.25)
+            else:
+                raise RuntimeError('Resolve did not switch to the timeline copy.')
+            time.sleep(1)
             tracks = {}
             for name in dict.fromkeys(pl['track'] for pl in placements):
                 if not copy.AddTrack('video'):
