@@ -20,3 +20,6 @@ LISEZ-MOI.md
 *.wav
 *.mp3
 work/
+
+# Machine-specific MCP client configuration
+.mcp.json

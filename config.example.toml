@@ -1,5 +1,6 @@
 [mcp_servers.resolve_safe]
 command = 'C:/path/to/davinci-resolve-mcp/.venv/Scripts/python.exe'
 args = ['C:/path/to/davinci-resolve-mcp/resolve_safe_mcp.py']
-enabled_tools = ['inspect_project', 'inspect_timeline', 'duplicate_for_marker_test', 'add_test_marker', 'preview_cut_plan', 'create_cut_timeline', 'verify_cut_timeline', 'inspect_sync_media', 'preview_sync_pair', 'create_sync_pair_copy', 'inspect_sync_attempt', 'preview_section_sync', 'create_section_sync_copy', 'inspect_section_sync_attempt', 'list_motion_clips', 'import_motion_clip', 'replace_motion_clip']startup_timeout_sec = 20
+enabled_tools = ['inspect_project', 'inspect_timeline', 'duplicate_for_marker_test', 'add_test_marker', 'preview_cut_plan', 'create_cut_timeline', 'verify_cut_timeline', 'inspect_sync_media', 'preview_sync_pair', 'create_sync_pair_copy', 'inspect_sync_attempt', 'preview_section_sync', 'create_section_sync_copy', 'inspect_section_sync_attempt', 'list_motion_clips', 'import_motion_clip', 'replace_motion_clip', 'place_motion_clips', 'probe_native_camera_split', 'preview_camera_edit', 'create_camera_edit_copy', 'verify_camera_edit_copy', 'inspect_camera_edit_frames']
+startup_timeout_sec = 20
 tool_timeout_sec = 1200

@@ -68,6 +68,14 @@ Run offline tests with:
 .\.venv\Scripts\python.exe -m unittest discover -p "test_*.py"
 ```
 
+## Native camera-angle editing
+
+`preview_camera_edit(timeline_id, start_seconds=128, rhythm="long")` plans an angle schedule on video tracks 1–3 through the timeline's video Out. It aims for two thirds camera 1, with camera 3 receiving about twice camera 2's duration. The default `long` rhythm favors longer shots. The optional `10-15` rhythm uses secondary shots of about 10–15 seconds and usually longer main-camera shots. Existing discontinuous edits force angle changes; very short original sections are reported as exceptions. This is a timing-based edit, not an analysis of speech or gestures.
+
+`create_camera_edit_copy(plan_id, copy_name)` operates only on a fresh native duplicate. It trims the first segment in place, adds video-only segments through a temporary scratch track, copies video attributes and grading, and disables unselected angles. No camera footage is deleted. Native timeline-unit source offsets are restored from full media to preserve source phase across differing media/timeline frame rates. Audio, upper tracks, coverage, properties and source timing are checked. Source camera tracks must have matching coverage, 100% speed and no Fusion compositions.
+
+Plans are single-use and attempt identity/progress are saved under ignored `work/camera-edit-result.json`. After an error or timeout, inspect this file and the returned copy; never repeat creation blindly. `verify_camera_edit_copy` rechecks the existing attempt, restores the source Out after clip insertion, optionally opens the copy, and saves the project. `inspect_camera_edit_frames` exports three stills and matching source-angle references for picture review. Live native split validation copies are retained for inspection; there is no automatic deletion.
+
 ## Native audio alignment (experimental, one pair at a time)
 
 - `inspect_sync_media`: read clip IDs, camera bins, audio channels and file availability.

@@ -242,6 +242,55 @@ def replace_motion_clip(media_id: str, file_path: str) -> dict:
     with lock:
         return motion.replace_clip(media_id, file_path)
 
+@mcp.tool(annotations=WRITE)
+def probe_native_camera_split(timeline_id: str) -> dict:
+    """Validate one native video split on a NEW copy; preserve all originals and audio.
+    Never retry blindly: partial-copy identity is saved in work/camera-native-probe.json.
+    """
+    from camera_bridge import probe
+    with lock:
+        return probe(project, find, summary, timeline_id)
+
+from camera_bridge import CameraEdits
+cameras = CameraEdits(project, find, summary)
+
+@mcp.tool(annotations=READ)
+def preview_camera_edit(timeline_id: str, start_seconds: int = 128, rhythm: str = 'long') -> dict:
+    """Plan long camera shots on video 1-3 from elapsed start through current Out.
+    Camera 1 receives about two thirds, camera 3 about twice camera 2.
+    Does not alter clips. Returns a single-use plan and unavoidable short-shot exceptions.
+    """
+    with lock:
+        return cameras.preview(timeline_id, start_seconds, rhythm)
+
+@mcp.tool(annotations=WRITE)
+def create_camera_edit_copy(plan_id: str, copy_name: str) -> dict:
+    """Apply a camera preview on a NEW native duplicate. Never deletes camera clips.
+    Split video 1-3 natively and disable other angles; preserve source, audio and upper tracks.
+    Single-use. After timeout/error inspect work/camera-edit-result.json; never retry blindly.
+    """
+    with lock:
+        return cameras.create(plan_id, copy_name)
+
+@mcp.tool(annotations=WRITE)
+def verify_camera_edit_copy(open_copy: bool = True) -> dict:
+    """Recheck the saved existing camera copy; never repeats cuts or creates another copy.
+    Restore the source's output range on the copy, verify all footage, audio and upper tracks,
+    open the copy if requested, and save the project. Source timeline is never modified.
+    """
+    from camera_verify import verify_existing
+    with lock:
+        return verify_existing(project, find, summary, open_copy)
+
+@mcp.tool(annotations=READ)
+def inspect_camera_edit_frames() -> dict:
+    """Export three sample frames from the completed camera copy and source angles for picture review.
+    Does not alter clips or grades. Restores timeline selection.
+    """
+    from camera_frames import export_review
+    with lock:
+        return export_review(project, find)
+
 if __name__ == '__main__':
     if '--doctor' in sys.argv:
         try:
