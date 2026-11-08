@@ -291,6 +291,9 @@ def inspect_camera_edit_frames() -> dict:
     with lock:
         return export_review(project, find)
 
+from auto_edit_tools import register as register_auto_edit
+register_auto_edit(mcp, lock, project, find, READ, WRITE)
+
 if __name__ == '__main__':
     if '--doctor' in sys.argv:
         try:

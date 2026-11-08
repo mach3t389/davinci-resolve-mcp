@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Maquette — recette de montage</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<style>
+:root{--surface-0:#fafaf8;--surface-1:#f1f0ec;--surface-2:#fff;--text-primary:#1a1a18;--text-secondary:#5c5b56;--text-muted:#8a8984;--border:rgba(0,0,0,.12);--border-strong:rgba(0,0,0,.22);--border-stronger:rgba(0,0,0,.4);--fill-accent:#2f6fdb;--bg-accent:#e4edfb;--text-accent:#1c4a9a;--border-accent:#9fbcee;--bg-warning:#fbf0cf;--text-warning:#7a5a00;--radius:8px}
+@media (prefers-color-scheme:dark){:root{--surface-0:#131312;--surface-1:#1e1e1c;--surface-2:#252523;--text-primary:#f2f1ec;--text-secondary:#b5b4ad;--text-muted:#85847d;--border:rgba(255,255,255,.14);--border-strong:rgba(255,255,255,.26);--border-stronger:rgba(255,255,255,.45);--fill-accent:#5b95f0;--bg-accent:#1d2c47;--text-accent:#a9c6f7;--border-accent:#3e5d95;--bg-warning:#3a2f10;--text-warning:#f0cf72}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--surface-0);color:var(--text-primary);font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:760px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:18px;font-weight:600;margin:0 0 4px}
+.lead{color:var(--text-secondary);margin:0 0 16px}
+h2{font-size:14px;font-weight:600;margin:22px 0 8px}
+input,select,button,textarea{font:inherit;color:inherit}
+input[type=text],input[type=number],select{height:32px;width:100%;padding:0 8px;background:var(--surface-2);border:.5px solid var(--border-strong);border-radius:var(--radius)}
+button{background:transparent;border:.5px solid var(--border-strong);border-radius:var(--radius);height:32px;padding:0 12px;cursor:pointer}
+button:hover{background:var(--surface-1)}
+.card{background:var(--surface-2);border:.5px solid var(--border);border-radius:12px}
+.strip{display:flex;gap:3px;height:42px;margin:0 0 10px}
+.seg{min-width:0;border-radius:6px;padding:4px 7px;font-size:11px;display:flex;flex-direction:column;justify-content:center;overflow:hidden;white-space:nowrap}
+.seg span{overflow:hidden;text-overflow:ellipsis}
+.fixed{background:var(--surface-1);color:var(--text-secondary);border:.5px solid var(--border-strong)}
+.client{background:var(--bg-accent);color:var(--text-accent);border:.5px solid var(--border-accent)}
+.opt{border-style:dashed}
+.row{display:flex;align-items:center;gap:8px;padding:8px 10px;min-height:44px}
+.blk{border-top:.5px solid var(--border)}
+.blk:first-child{border-top:0}
+.blk.over{background:var(--surface-1)}
+.handle{cursor:grab;color:var(--text-muted);font-size:16px;display:flex}
+.n{width:20px;height:20px;border-radius:50%;background:var(--surface-1);font-size:11px;display:flex;align-items:center;justify-content:center;flex:none}
+.name{font-weight:600}
+.hint{color:var(--text-secondary);font-size:12px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ib{width:28px;height:28px;padding:0;border:0;display:inline-flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:15px}
+.set{padding:2px 12px 12px 66px;display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px 12px}
+.set label,.common label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--text-secondary)}
+.chk{flex-direction:row!important;align-items:center;gap:6px!important;color:var(--text-primary)!important;font-size:13px!important}
+.chk input{width:auto;height:auto}
+.common{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px 12px;padding:0 12px 12px}
+.pill{font-size:11px;padding:1px 7px;border-radius:999px;background:var(--surface-1);color:var(--text-secondary);white-space:nowrap}
+.pill.warn{background:var(--bg-warning);color:var(--text-warning)}
+.sum{background:var(--surface-1);border-radius:12px;padding:12px 14px;margin-top:10px}
+ol,ul{margin:6px 0 0;padding-left:20px}
+.note{color:var(--text-secondary);font-size:12px;margin:6px 0 0}
+</style>
+</head>
+<body>
+<main>
+<h1>Recette de montage</h1>
+<p class="lead">Maquette interactive : rien n'est enregistré. Glissez un clip par sa poignée pour changer l'ordre du montage.</p>
+<div id="app"></div>
+</main>
+<script>
+const Q={open:"Clip d'ouverture (facultatif)",main:'Vidéo à monter'};
+const ANCHORS={from_start:'Secondes après le début du clip',percent:'Pourcentage du clip',before_end:'Secondes avant la fin du clip',field:'Temps donné dans le formulaire',phrase:'Quand la personne dit…'};
+const ANIMS=["Bouton S'abonner",'Titre de présentation'];
+let k=0;const c=o=>({k:++k,open:false,trim:false,silence:false,optional:false,...o});
+const S={clips:[
+ c({label:'Clip du client',src:'q',q:'open',optional:true,trim:true}),
+ c({label:'Introduction',src:'f',file:'Intro_Propulse.mov'}),
+ c({label:'Vidéo principale',src:'q',q:'main',trim:true,silence:true,open:true}),
+ c({label:'Conclusion',src:'f',file:'Conclusion_Propulse.mov'})],
+ over:[
+  {k:++k,open:true,anim:"Bouton S'abonner",clip:'Vidéo principale',anchor:'percent',val:50,chapter:''},
+  {k:++k,open:false,anim:'Titre de présentation',clip:'Vidéo principale',anchor:'from_start',val:5,chapter:'Présentation'}],
+ min:.7,keep:.25,norm:true,sim:true,prec:'exact',search:2};
+const trimText=()=>S.prec==='exact'?", coupé exactement aux temps donnés (à l'image près, sans vérification)":`, coupé près des temps donnés (meilleur moment à ${S.search} s au plus)`;
+const seq=()=>S.clips.filter(x=>!x.optional||S.sim);
+const where=o=>({from_start:`${o.val||0} s après le début`,percent:`à ${o.val||0} % de la durée`,before_end:`${o.val||0} s avant la fin`,field:'au temps donné dans le formulaire',phrase:`quand la personne dit « ${o.val||'…'} »`}[o.anchor]);
+function valueField(o){
+ if(o.anchor==='field')return '';
+ if(o.anchor==='phrase')return `<label>Mot ou phrase<input type="text" data-o="${o.k}" data-f="val" value="${o.val||''}" placeholder="abonnez-vous"></label>`;
+ const u=o.anchor==='percent'?'Pourcentage (0 à 100)':'Secondes';
+ return `<label>${u}<input type="number" min="0" ${o.anchor==='percent'?'max="100"':''} step="${o.anchor==='percent'?5:1}" data-o="${o.k}" data-f="val" value="${o.val??''}"></label>`;}
+function render(){
+ const list=seq(),A=document.getElementById('app');
+ A.innerHTML=`
+ <h2>Ordre du montage</h2>
+ <div class="strip" aria-label="Ordre du montage final">${list.map(x=>`<div class="seg ${x.src==='q'?'client':'fixed'} ${x.optional?'opt':''}" style="flex:${x.label==='Vidéo principale'?5:x.src==='q'?2:1.3}"><span>${x.label}</span><span>${[x.trim?'coupé':'',x.silence?'sans temps morts':''].filter(Boolean).join(' · ')||'tel quel'}</span></div>`).join('')}</div>
+ <label class="chk" style="display:flex;margin-bottom:10px;font-size:12px!important;color:var(--text-secondary)!important"><input type="checkbox" id="sim" ${S.sim?'checked':''}> Simuler : le client a fourni un clip d'ouverture</label>
+ <div class="card">${S.clips.map((x,i)=>`<div class="blk" draggable="true" data-k="${x.k}">
+  <div class="row"><span class="handle" aria-hidden="true" title="Glisser pour changer l'ordre"><i class="ti ti-grip-vertical"></i></span><span class="n">${i+1}</span>
+   <span class="name">${x.label}</span><span class="hint">${x.src==='f'?(x.file||'Fichier à choisir'):'Question : '+Q[x.q]}</span>
+   ${x.optional?'<span class="pill">Si fourni</span>':''}
+   <button class="ib" aria-label="Réglages de ${x.label}" data-a="open" data-k="${x.k}"><i class="ti ti-chevron-${x.open?'up':'down'}"></i></button>
+   <button class="ib" aria-label="Retirer ${x.label}" data-a="del" data-k="${x.k}"><i class="ti ti-trash"></i></button></div>
+  ${x.open?`<div class="set">
+   <label>Nom<input type="text" data-k="${x.k}" data-f="label" value="${x.label}"></label>
+   <label>Source<select data-k="${x.k}" data-f="src"><option value="f" ${x.src==='f'?'selected':''}>Fichier fixe</option><option value="q" ${x.src==='q'?'selected':''}>Vidéo envoyée dans le formulaire</option></select></label>
+   ${x.src==='f'?`<label>Fichier<input type="text" data-k="${x.k}" data-f="file" value="${x.file||''}" placeholder="Choisir dans le projet"></label>`:`<label>Question<select data-k="${x.k}" data-f="q">${Object.entries(Q).map(([v,t])=>`<option value="${v}" ${x.q===v?'selected':''}>${t}</option>`).join('')}</select></label>`}
+   <label class="chk"><input type="checkbox" data-k="${x.k}" data-f="trim" ${x.trim?'checked':''}>Couper selon les temps donnés</label>
+   <label class="chk"><input type="checkbox" data-k="${x.k}" data-f="silence" ${x.silence?'checked':''}>Couper les temps morts</label>
+   ${x.src==='q'?`<label class="chk"><input type="checkbox" data-k="${x.k}" data-f="optional" ${x.optional?'checked':''}>Sauter s'il n'est pas fourni</label>`:''}
+  </div>`:''}</div>`).join('')}
+  <div class="blk" style="padding:10px"><button data-a="add"><i class="ti ti-plus" aria-hidden="true"></i> Ajouter un clip</button></div></div>
+
+ <h2>Superpositions</h2>
+ <p class="note" style="margin:0 0 8px">Elles ne font pas partie de l'ordre : chacune se rattache à un clip et à un moment de ce clip, mesuré après les coupes.</p>
+ <div class="card">${S.over.map(o=>`<div class="blk">
+  <div class="row"><i class="ti ti-sparkles" aria-hidden="true" style="font-size:16px;color:var(--text-secondary)"></i><span class="name">${o.anim}</span>
+   <span class="hint">${o.clip} · ${where(o)}</span>${o.chapter?'<span class="pill">Chapitre</span>':''}
+   <button class="ib" aria-label="Réglages de ${o.anim}" data-a="oopen" data-o="${o.k}"><i class="ti ti-chevron-${o.open?'up':'down'}"></i></button>
+   <button class="ib" aria-label="Retirer ${o.anim}" data-a="odel" data-o="${o.k}"><i class="ti ti-trash"></i></button></div>
+  ${o.open?`<div class="set">
+   <label>Animation<select data-o="${o.k}" data-f="anim">${ANIMS.map(a=>`<option ${o.anim===a?'selected':''}>${a}</option>`).join('')}</select></label>
+   <label>Sur le clip<select data-o="${o.k}" data-f="clip">${S.clips.map(x=>`<option ${o.clip===x.label?'selected':''}>${x.label}</option>`).join('')}</select></label>
+   <label>Moment<select data-o="${o.k}" data-f="anchor">${Object.entries(ANCHORS).map(([v,t])=>`<option value="${v}" ${o.anchor===v?'selected':''}>${t}</option>`).join('')}</select></label>
+   ${valueField(o)}
+   <label>Titre du chapitre (facultatif)<input type="text" data-o="${o.k}" data-f="chapter" value="${o.chapter}" placeholder="Présentation"></label>
+  </div>`:''}</div>`).join('')||'<div class="blk" style="padding:14px;color:var(--text-secondary)">Aucune superposition.</div>'}
+  <div class="blk" style="padding:10px"><button data-a="oadd"><i class="ti ti-plus" aria-hidden="true"></i> Ajouter une superposition</button></div></div>
+
+ <h2>Réglages communs</h2>
+ <div class="card"><div class="row"><span class="name" style="flex:1">Temps morts</span><button data-a="all"><i class="ti ti-copy" aria-hidden="true"></i> Sur tous les clips</button><button data-a="none">Sur aucun</button></div>
+  <div class="common"><label>Pause minimale (s)<input type="number" id="min" step="0.1" min="0.1" value="${S.min}"></label><label>Durée gardée (s)<input type="number" id="keep" step="0.05" min="0" value="${S.keep}"></label><label>Précision des temps du client<select id="prec"><option value="exact" ${S.prec==='exact'?'selected':''}>Exacts : couper à l'image près (par défaut)</option><option value="approx" ${S.prec==='approx'?'selected':''}>Approximatifs : chercher le meilleur moment</option></select></label>${S.prec==='approx'?`<label>Déplacement maximal (s)<input type="number" id="search" step="0.5" min="0" max="30" value="${S.search}"></label>`:''}<label class="chk"><input type="checkbox" id="norm" ${S.norm?'checked':''}>Normaliser le son du montage</label></div>
+  <p class="note" style="padding:0 12px 12px;margin:0">${S.prec==='exact'?"Les temps donnés sont suivis tels quels : aucune analyse de la parole, aucune vérification.":"Les temps donnés ne sont qu'une zone : la parole autour est analysée pour couper au bon moment, et une coupe douteuse est marquée."}</p></div>
+
+ <div class="sum"><div class="name">Ce qui se passera pour cette demande</div>
+  <ol>${list.map(x=>`<li>${x.label}${x.trim?trimText():''}${x.silence?`, pauses de plus de ${S.min} s réduites à ${S.keep} s`:''}.</li>`).join('')}
+  ${S.over.map(o=>`<li>${o.anim} sur « ${o.clip} », ${where(o)}${o.chapter?`, avec le chapitre « ${o.chapter} »`:''}.</li>`).join('')}</ol>
+  ${S.norm?'<p class="note">Le son du montage complet est ensuite normalisé.</p>':''}
+  <p class="note">Si un moment tombe dans un passage coupé, si le mot n'est pas trouvé ou si deux animations se chevauchent, le montage le signale par un marqueur au lieu de deviner.</p></div>`;
+ document.querySelectorAll('.blk[draggable]').forEach(el=>{
+  el.addEventListener('dragstart',e=>{drag=+el.dataset.k;e.dataTransfer.effectAllowed='move';});
+  el.addEventListener('dragover',e=>{e.preventDefault();el.classList.add('over');});
+  el.addEventListener('dragleave',()=>el.classList.remove('over'));
+  el.addEventListener('drop',e=>{e.preventDefault();const to=S.clips.findIndex(x=>x.k==el.dataset.k),from=S.clips.findIndex(x=>x.k==drag);if(from>=0&&to>=0&&from!==to){const[m]=S.clips.splice(from,1);S.clips.splice(to,0,m);render();}});});
+}
+let drag=null;const R=document.getElementById('app');
+R.addEventListener('click',e=>{const t=e.target.closest('[data-a]');if(!t)return;const a=t.dataset.a,x=S.clips.find(y=>y.k==t.dataset.k),o=S.over.find(y=>y.k==t.dataset.o);
+ if(a==='open')x.open=!x.open;if(a==='del')S.clips=S.clips.filter(y=>y!==x);
+ if(a==='add')S.clips.push(c({label:'Nouveau clip',src:'f',file:'',open:true}));
+ if(a==='all')S.clips.forEach(y=>y.silence=true);if(a==='none')S.clips.forEach(y=>y.silence=false);
+ if(a==='oopen')o.open=!o.open;if(a==='odel')S.over=S.over.filter(y=>y!==o);
+ if(a==='oadd')S.over.push({k:++k,open:true,anim:ANIMS[0],clip:S.clips[0]?.label||'',anchor:'from_start',val:10,chapter:''});
+ render();});
+R.addEventListener('change',e=>{const el=e.target;
+ if(el.id==='sim')S.sim=el.checked;else if(el.id==='norm')S.norm=el.checked;
+ else if(el.id==='min'||el.id==='keep')S[el.id]=Math.round(+el.value*100)/100;
+ else if(el.id==='prec')S.prec=el.value;else if(el.id==='search')S.search=Math.round(+el.value*10)/10;
+ else if(el.dataset.o){const o=S.over.find(y=>y.k==el.dataset.o);if(!o)return;
+  if(el.dataset.f==='anchor'){o.anchor=el.value;o.val=el.value==='phrase'?'':el.value==='percent'?50:10;}
+  else o[el.dataset.f]=(el.type==='number')?(el.value===''?'':Math.round(+el.value*100)/100):el.value;}
+ else{const x=S.clips.find(y=>y.k==el.dataset.k);if(!x)return;x[el.dataset.f]=el.type==='checkbox'?el.checked:el.value;}
+ render();});
+render();
+</script>
+</body>
+</html>
