@@ -62,6 +62,9 @@ def timeline_keeps(timeline, media_id, fps, track=1):
     return reference_keeps(clips, fps)
 
 
+from montage_build import MontageBuilder
+
+
 def register(mcp, lock, project, find, read, write):
     @mcp.tool(annotations=read)
     def auto_edit_catalog() -> dict:
@@ -85,6 +88,30 @@ def register(mcp, lock, project, find, read, write):
         with lock:
             _, p = project()
             return dict(started=bool(find_media(p, media_id).TranscribeAudio()))
+
+    builder = MontageBuilder(project)
+
+    @mcp.tool(annotations=write)
+    def organize_montage_media(project_name: str, files: list[dict], folders: list[dict] | None = None, names: dict | None = None) -> dict:
+        """Import media into <project_name>/<folder> bins of the Media Pool, creating missing bins and reusing existing ones.
+        Each file: {path, role?, folder?}. A folder takes the roles/extensions it lists (defaults: Sources, Animations, Musique, Son,
+        Montage fini, Autres). `folders` replaces the defaults; `names` renames some by id. Touches no timeline."""
+        with lock:
+            return builder.organize_media(project_name, files, folders, names)
+
+    @mcp.tool(annotations=write)
+    def build_montage_timeline(name: str, plan: dict, sources: dict) -> dict:
+        """Create a NEW timeline with the pieces of a plan (`plan.sequence` from preview_auto_edit), back to back.
+        `sources` maps each piece's source (form question or file name) to a media ID. Refuses an existing timeline name.
+        Reports what the plan asks for that is not applied yet (overlays, fades, audio, markers, chapters)."""
+        with lock:
+            return builder.build_timeline(name, plan, sources)
+
+    @mcp.tool(annotations=write)
+    def render_montage(timeline_id: str, target_dir: str, file_name: str, timeout_seconds: int = 3600) -> dict:
+        """Render a timeline to <target_dir>/<file_name>.mp4 (H.264) and wait for the end. Never overwrites a file."""
+        with lock:
+            return builder.render(timeline_id, find, target_dir, file_name, timeout_seconds)
 
     @mcp.tool(annotations=read)
     def preview_auto_edit(recipe: dict, sources: dict, answers: dict | None = None) -> dict:

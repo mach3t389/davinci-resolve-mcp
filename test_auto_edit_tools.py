@@ -113,9 +113,9 @@ class Tools(unittest.TestCase):
     def test_reads_duration_and_rate(self):
         self.assertEqual(media_facts(self.media), dict(fps=24.0, duration=15.0, start_timecode='01:00:00:00'))
 
-    def test_only_transcribing_is_declared_as_a_write(self):
-        writes = [name for name, annotation in self.mcp.annotations.items() if annotation == 'write']
-        self.assertEqual(writes, ['transcribe_media_for_edit'])
+    def test_only_these_tools_are_declared_as_writes(self):
+        writes = sorted(name for name, annotation in self.mcp.annotations.items() if annotation == 'write')
+        self.assertEqual(writes, ['build_montage_timeline', 'organize_montage_media', 'render_montage', 'transcribe_media_for_edit'])
 
     def test_preview_uses_resolve_words_and_creates_nothing(self):
         result = self.mcp.tools['preview_auto_edit'](RECIPE, SOURCES)
