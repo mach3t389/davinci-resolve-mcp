@@ -272,5 +272,83 @@ class Render(unittest.TestCase):
         self.assertIn('stop', self.project.render_calls)
 
 
+class Transcribed(Item):
+    def __init__(self, *args, after=0, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.after, self.asked, self.reads = after, 0, 0
+
+    def GetClipProperty(self, name):
+        return '01:00:00:00' if name == 'Start TC' else super().GetClipProperty(name)
+
+    def TranscribeAudio(self):
+        self.asked += 1
+        return True
+
+    def GetTranscription(self):
+        self.reads += 1
+        if self.asked == 0 or self.reads <= self.after:
+            return {}
+        return dict(segments=[dict(words=[dict(start='01:00:02:00', end='01:00:03:00', text='bonjour'), dict(start='01:00:03:00', end='01:00:09:00', text='(...)')])])
+
+
+class Transcription(unittest.TestCase):
+    def setUp(self):
+        self.project = Project()
+        self.builder = MontageBuilder(lambda: (None, self.project), sleep=lambda s: None)
+
+    def test_asks_resolve_waits_and_returns_words_in_source_seconds(self):
+        item = Transcribed('m1', 'a.mp4', after=3)
+        self.project.pool.root.clips.append(item)
+        result = self.builder.transcribe('m1')
+        self.assertEqual(result['words'], [dict(start=2.0, end=3.0, text='bonjour')])
+        self.assertEqual(item.asked, 1)
+
+    def test_an_existing_transcription_is_not_asked_again(self):
+        item = Transcribed('m1', 'a.mp4')
+        item.asked = 1
+        self.project.pool.root.clips.append(item)
+        self.builder.transcribe('m1')
+        self.assertEqual(item.asked, 1)
+
+    def test_gives_up_after_the_timeout(self):
+        self.project.pool.root.clips.append(Transcribed('m1', 'a.mp4', after=10 ** 9))
+        with self.assertRaises(TimeoutError):
+            self.builder.transcribe('m1', timeout_seconds=0)
+
+    def test_unknown_media(self):
+        with self.assertRaisesRegex(ValueError, 'not found'):
+            self.builder.transcribe('zzz')
+
+
+class Cli(unittest.TestCase):
+    def test_unknown_command_and_bad_json_become_errors(self):
+        import io
+        import montage_cli
+        with self.assertRaisesRegex(ValueError, 'Unknown command'):
+            montage_cli.handle(dict(command='nope'), None, None)
+        out = io.StringIO()
+        self.assertEqual(montage_cli.main(io.StringIO('not json'), out), 1)
+        answer = __import__('json').loads(out.getvalue())
+        self.assertFalse(answer['ok'])
+        self.assertEqual(answer['kind'], 'JSONDecodeError')
+
+    def test_commands_reach_the_builder(self):
+        import montage_cli
+        calls = []
+
+        class Fake:
+            def organize_media(self, *a): calls.append(('import', a)); return 1
+            def transcribe(self, *a): calls.append(('transcribe', a)); return 2
+            def build_timeline(self, *a): calls.append(('build', a)); return 3
+            def render(self, *a): calls.append(('render', a[0], a[2:])); return 4
+        fake = Fake()
+        self.assertEqual(montage_cli.handle(dict(command='import', project_name='P', files=[]), fake, None), 1)
+        self.assertEqual(montage_cli.handle(dict(command='transcribe', media_id='m'), fake, None), 2)
+        self.assertEqual(montage_cli.handle(dict(command='build', name='N', plan={}, sources={}), fake, None), 3)
+        self.assertEqual(montage_cli.handle(dict(command='render', timeline_id='t', target_dir='d', file_name='f'), fake, None), 4)
+        self.assertEqual(calls[1], ('transcribe', ('m', 1800)))
+        self.assertEqual(calls[3], ('render', 't', ('d', 'f', 3600)))
+
+
 if __name__ == '__main__':
     unittest.main()

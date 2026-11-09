@@ -191,6 +191,27 @@ class MontageBuilder:
                 continue
         raise ValueError(f'Media {media_id!r} not found in the Media Pool.')
 
+    # ---- transcription ----------------------------------------------------------------------------------------
+    def transcribe(self, media_id, timeout_seconds=1800):
+        """Ask Resolve to transcribe a media (unless it already is) and return its words in source seconds."""
+        from auto_edit import words_from_resolve
+        _, p = self.project()
+        item = self._media(p.GetMediaPool().GetRootFolder(), media_id)
+        fps = float(item.GetClipProperty('FPS'))
+        start_tc = item.GetClipProperty('Start TC') or '00:00:00:00'
+
+        def words():
+            return words_from_resolve(item.GetTranscription() or {}, fps, start_tc)
+        if not words():
+            if not item.TranscribeAudio():
+                raise RuntimeError('Resolve did not start the transcription.')
+            deadline = time.monotonic() + timeout_seconds
+            while not words():
+                if time.monotonic() > deadline:
+                    raise TimeoutError(f'Resolve did not finish the transcription within {timeout_seconds} seconds.')
+                self.sleep(2)
+        return dict(media_id=media_id, words=words())
+
     # ---- render -----------------------------------------------------------------------------------------------
     def render(self, timeline_id, find, target_dir, file_name, timeout_seconds=3600, container='mp4', codec='H264'):
         """Render one timeline to <target_dir>/<file_name>.<container>. Never overwrites; waits for the job to end."""
