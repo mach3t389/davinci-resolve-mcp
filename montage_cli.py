@@ -27,7 +27,7 @@ def main(stdin=sys.stdin, stdout=sys.stdout):
         request = json.loads(stdin.read())
         # Imported here so that tests of `handle` do not need Resolve or the MCP package.
         from montage_build import MontageBuilder
-        from resolve_safe_mcp import find, project
+        from resolve_connection import find, project
         answer = dict(ok=True, result=handle(request, MontageBuilder(project), find))
     except Exception as error:  # the worker reads the kind and message, nothing else
         answer = dict(ok=False, error=str(error), kind=type(error).__name__)
