@@ -64,8 +64,10 @@ def tc(f, fps=FPS):
     return f'{f // per_min:02d}:{(f % per_min) / fps:05.2f}'
 
 
-def snapshot_from_resolve(t, out_marker_names=('Out', 'Out montage')):
-    """Build a Snapshot from a Resolve timeline object. Read only."""
+def snapshot_from_resolve(t, out_marker_names=('Out',)):
+    """Build a Snapshot from a Resolve timeline object. Read only.
+    The end of the edit is the marker named exactly "Out"; without it, the end of the last voice clip. A marker such as
+    "Out montage" is NOT used: Resolve never moves markers, so it goes stale after the first retouches."""
     st = t.GetStartFrame()
     snap = Snapshot(name=t.GetName(), start_tc_frames=st)
     try:
@@ -92,6 +94,23 @@ def snapshot_from_resolve(t, out_marker_names=('Out', 'Out montage')):
                 snap.clips.append(Clip(
                     kind=kind, track=i, track_name=name, start=int(x.GetStart() - st), end=int(x.GetEnd() - st),
                     file=mp.GetClipProperty('File Path') if mp else '', name=x.GetName(),
-                    src_start=int(x.GetLeftOffset()), enabled=bool(x.GetClipEnabled()),
+                    src_start=int(x.GetLeftOffset() or 0),   # generators and titles have no source offset
+                    enabled=bool(x.GetClipEnabled()),
                     color=x.GetClipColor() or '', media_fps=fps, has_media=mp is not None))
+    if not outs:
+        snap.out_frame = guess_out_frame(snap) or snap.out_frame
     return snap
+
+
+def guess_out_frame(snap, track=1, parked_gap_seconds=60):
+    """End of the edit when no "Out" marker exists: the end of the voice before the first long silence of the
+    voice track. Unused shots are parked after the end of the video (doc 25), so the last voice clip is not it."""
+    voice = snap.track('audio', track)
+    voice = [c for c in voice if c.has_media]
+    if not voice:
+        return None
+    limit = parked_gap_seconds * snap.fps
+    for a, b in zip(voice, voice[1:]):
+        if b.start - a.end >= limit:
+            return a.end
+    return voice[-1].end

@@ -152,9 +152,17 @@ def check_max_same_camera(snap, values):
         else:
             run = dict(start=s['start'], end=s['end'], cam=s['cam'])
             runs.append(run)
-    return [finding('max_same_camera', r['start'], r['end'] - r['start'],
-                    f'{(r["end"] - r["start"]) / snap.fps:.1f}s on the same camera V{r["cam"]} (maximum {mx}s)',
-                    'warning') for r in runs if r['end'] - r['start'] > limit]
+    cover, _ = cover_and_fades(snap, values)
+    found = []
+    for r in runs:
+        # only the part the viewer really sees counts: b-roll and panels hide the camera (doc 25)
+        edges = sorted({r['start'], r['end']} | {x for a, b in cover for x in (a, b) if r['start'] < x < r['end']})
+        longest = max((b - a for a, b in zip(edges, edges[1:]) if not _within(cover, a)), default=0)
+        if longest > limit:
+            found.append(finding('max_same_camera', r['start'], r['end'] - r['start'],
+                                 f'{longest / snap.fps:.1f}s visible on the same camera V{r["cam"]} (maximum {mx}s)',
+                                 'warning'))
+    return found
 
 
 def camera_share(snap):
