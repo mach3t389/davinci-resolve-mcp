@@ -65,8 +65,12 @@ def shots(snap, start=0, end=None):
     return out
 
 
-def cover_and_fades(snap, values):
-    """Frames where graphics/b-roll hide the cameras (cover) and where their fades run (fades)."""
+def cover_and_fades(snap, values, profiles=None):
+    """Frames where graphics/b-roll hide the cameras (cover) and where their fades run (fades).
+    profiles: {render file path: fade profile} read from the Motion sidecars (panels.profile_for). A render known to
+    be 'partial' (an overlay over the picture, possibly over several shots) constrains nothing. For a full-screen
+    render the fades come from its own profile; without one, from the directives (conservative)."""
+    profiles = profiles or {}
     cover, fades = [], []
     for (kind, i), name in snap.track_names.items():
         if kind != 'video':
@@ -78,12 +82,17 @@ def cover_and_fades(snap, values):
             if not x.has_media:
                 continue
             p = overlay_params(values, x.name)
+            prof = profiles.get(x.file)
+            if prof and prof.get('coverage') == 'partial':
+                continue
             if role == 'broll':
                 cover.append((x.start, x.end))
                 fades.append((x.start - p['pad_frames'], x.start + p['pad_frames']))
                 fades.append((x.end - p['pad_frames'], x.end + p['pad_frames']))
             else:
                 fi, fo, pad = p['fade_in_frames'], p['fade_out_frames'], p['pad_frames']
+                if prof:        # what the animation says wins over the directive; a dissolve added by the editor still counts
+                    fi, fo = max(prof['in_full'], fi), prof['n'] - prof['out_start']
                 cover.append((x.start + fi, x.end - fo))
                 fades.append((x.start - pad, x.start + fi))
                 fades.append((x.end - fo, x.end + pad))
@@ -95,7 +104,7 @@ def _within(ranges, f):
 
 
 # ---- the checks -------------------------------------------------------------------------------------------------
-def check_sync(snap, values):
+def check_sync(snap, values, profiles=None):
     """Image = sound: under every voice clip the camera picture comes from the same take at the same frame."""
     tol = values['sync']['tolerance_frames']
     found = []
@@ -125,12 +134,12 @@ def check_sync(snap, values):
     return found
 
 
-def check_min_shot(snap, values):
+def check_min_shot(snap, values, profiles=None):
     mn = values['cameras']['min_shot_seconds']
     if not mn:
         return []
     need = int(round(mn * snap.fps))
-    cover, _ = cover_and_fades(snap, values)
+    cover, _ = cover_and_fades(snap, values, profiles)
     found = []
     for s in shots(snap):
         if s['end'] - s['start'] < need and not _within(cover, s['start']):
@@ -140,7 +149,7 @@ def check_min_shot(snap, values):
     return found
 
 
-def check_max_same_camera(snap, values):
+def check_max_same_camera(snap, values, profiles=None):
     mx = values['cameras']['max_same_camera_seconds']
     if not mx:
         return []
@@ -152,7 +161,7 @@ def check_max_same_camera(snap, values):
         else:
             run = dict(start=s['start'], end=s['end'], cam=s['cam'])
             runs.append(run)
-    cover, _ = cover_and_fades(snap, values)
+    cover, _ = cover_and_fades(snap, values, profiles)
     found = []
     for r in runs:
         # only the part the viewer really sees counts: b-roll and panels hide the camera (doc 25)
@@ -174,7 +183,7 @@ def camera_share(snap):
     return {k: v / whole for k, v in total.items()}
 
 
-def check_camera_share(snap, values):
+def check_camera_share(snap, values, profiles=None):
     target = values['cameras']['main_share']
     if target is None:
         return []
@@ -187,10 +196,10 @@ def check_camera_share(snap, values):
     return []
 
 
-def check_same_camera_jump_cuts(snap, values, start=0):
+def check_same_camera_jump_cuts(snap, values, start=0, profiles=None):
     """Visible cuts where the same camera jumps in the source and nothing hides it (jump cuts)."""
     bottom, top = camera_tracks(snap)
-    cover, _ = cover_and_fades(snap, values)
+    cover, _ = cover_and_fades(snap, values, profiles)
     found = []
     for s0, s1 in zip(shots(snap, start), shots(snap, start)[1:]):
         if s0['end'] != s1['start'] or s0['cam'] != s1['cam']:
@@ -202,9 +211,9 @@ def check_same_camera_jump_cuts(snap, values, start=0):
     return found
 
 
-def check_cut_in_fade_zone(snap, values):
+def check_cut_in_fade_zone(snap, values, profiles=None):
     """A camera change or cut inside the fade of an overlay (three simultaneous transitions)."""
-    _, fades = cover_and_fades(snap, values)
+    _, fades = cover_and_fades(snap, values, profiles)
     found = []
     for s in shots(snap)[1:]:
         if any(a < s['start'] < b for a, b in fades):
@@ -212,7 +221,7 @@ def check_cut_in_fade_zone(snap, values):
     return found
 
 
-def check_broll_gaps(snap, values):
+def check_broll_gaps(snap, values, profiles=None):
     small = values['broll'].get('small_gap_frames', 12)
     found = []
     for (kind, i), n in snap.track_names.items():
@@ -225,7 +234,7 @@ def check_broll_gaps(snap, values):
     return found
 
 
-def check_remnants(snap, values):
+def check_remnants(snap, values, profiles=None):
     """Tiny audio pieces (<= N frames) that continue neither neighbour."""
     mx = values['cuts']['remnant_max_frames']
     found = []
@@ -290,10 +299,10 @@ CHECKS = [check_sync, check_min_shot, check_max_same_camera, check_camera_share,
           check_cut_in_fade_zone, check_broll_gaps, check_remnants]
 
 
-def run_all(snap, values, with_waveform=False, level_db=ffmpeg_level_db, editor=None):
+def run_all(snap, values, with_waveform=False, level_db=ffmpeg_level_db, editor=None, profiles=None):
     found = []
     for chk in CHECKS:
-        found += chk(snap, values)
+        found += chk(snap, values, profiles=profiles)
     if with_waveform:
         found += check_cut_on_sound(snap, values, level_db)
     if editor is not None:

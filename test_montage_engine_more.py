@@ -5,8 +5,9 @@ from montage_engine.model import Clip, Snapshot
 from montage_engine.series import SERIES, VIDEO_TYPES, resolve_directives, roles_of
 
 
-def clip(kind, track, tname, start, end, name='x.mov', file='f.mov'):
-    return Clip(kind=kind, track=track, track_name=tname, start=start, end=end, file=file, name=name)
+def clip(kind, track, tname, start, end, name='x.mov', file='f.mov', src=0, enabled=True):
+    return Clip(kind=kind, track=track, track_name=tname, start=start, end=end, file=file, name=name,
+                src_start=src, enabled=enabled)
 
 
 def snap(clips):
@@ -58,6 +59,90 @@ class PanelsTest(unittest.TestCase):
         a, b = clip('video', 4, 'Motion', 1000, 1030, 'A_v001.mov'), clip('video', 4, 'Motion', 1031, 1100, 'B_v001.mov')
         plans = panels.plan_chains([(a, 'chapter'), (b, 'chapter')], {'A': dict(in_full=0, out_start=5), 'B': dict(in_full=40, out_start=60)})
         self.assertEqual(plans[0]['new_start'], 1000)
+
+
+class FadeInformationTest(unittest.TestCase):
+    """Fades are read from the render's sidecar; coverage decides whether a panel constrains the cuts around it."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self.dir = Path(tempfile.mkdtemp())
+        self.render = str(self.dir / 'Lili01_v001.mov')
+        Path(self.render).write_bytes(b'x')
+
+    def test_sidecar_roundtrip_and_it_wins_over_measuring(self):
+        panels.write_sidecar(self.render, n=100, in_full=0, out_start=82, coverage='fullscreen')
+        prof = panels.profile_for(self.render, measure=False)
+        self.assertEqual((prof['n'], prof['out_start'], prof['coverage'], prof['source']), (100, 82, 'fullscreen', 'sidecar'))
+        calls = []
+        orig = panels.alpha_profile_file
+        panels.alpha_profile_file = lambda p: calls.append(p) or None          # must not run: the sidecar answers
+        try:
+            self.assertEqual(panels.profile_for(self.render)['source'], 'sidecar')
+        finally:
+            panels.alpha_profile_file = orig
+        self.assertEqual(calls, [])
+
+    def test_a_broken_sidecar_is_ignored_not_half_trusted(self):
+        import json
+        from pathlib import Path
+        path = panels.sidecar_path(self.render)
+        for bad in ({'n': 100}, {'n': 100, 'in_full': 5, 'out_start': 3, 'coverage': 'fullscreen'},
+                    {'n': 100, 'in_full': 0, 'out_start': 82, 'coverage': 'half'},
+                    {'n': '100', 'in_full': 0, 'out_start': 82, 'coverage': 'partial'}, [1, 2]):
+            Path(path).write_text(json.dumps(bad), encoding='utf8')
+            self.assertIsNone(panels.read_sidecar(self.render), bad)
+        Path(path).write_text('{not json', encoding='utf8')
+        self.assertIsNone(panels.read_sidecar(self.render))
+        self.assertIsNone(panels.profile_for(self.render, measure=False))
+        with self.assertRaises(ValueError):
+            panels.write_sidecar(self.render, 10, 8, 4, 'fullscreen')
+
+    def test_coverage_is_measured_from_the_peak_alpha_when_there_is_no_sidecar(self):
+        self.assertEqual(panels.profile_from_alpha([255.0] * 50)['coverage'], 'fullscreen')
+        self.assertEqual(panels.profile_from_alpha([60.0] * 50)['coverage'], 'partial')      # a lower third
+        self.assertEqual(panels.profile_from_alpha([1.0] * 5)['coverage'], 'fullscreen')     # 0..1 scale
+
+    def scene(self):
+        from montage_engine import checks
+        cams = [clip('video', 1, 'Camera 2 (slider)', 0, 600, file='c2.mov'),
+                clip('video', 2, 'Camera 1 (principale)', 0, 200, file='c1.mov'),
+                clip('video', 2, 'Camera 1 (principale)', 200, 600, file='c1.mov', src=900, enabled=False)]
+        overlay = clip('video', 4, 'Motion', 195, 300, file='over.mov', name='Visuels01_v001.mov')
+        s = snap(cams + [overlay])
+        s.out_frame = 600
+        return checks, s
+
+    def test_a_partial_overlay_over_several_shots_lets_the_camera_change_under_it(self):
+        checks, s = self.scene()
+        v = resolve_directives()[0]
+        self.assertEqual(len(checks.check_cut_in_fade_zone(s, v)), 1)                       # unknown render: conservative
+        partial = {'over.mov': dict(n=105, in_full=0, out_start=90, coverage='partial')}
+        self.assertEqual(checks.check_cut_in_fade_zone(s, v, profiles=partial), [])
+        full = {'over.mov': dict(n=105, in_full=0, out_start=90, coverage='fullscreen')}
+        self.assertEqual(len(checks.check_cut_in_fade_zone(s, v, profiles=full)), 1)        # full screen: still constrained
+
+    def test_the_fades_of_the_render_replace_the_directive_estimate(self):
+        checks, s = self.scene()
+        v = resolve_directives()[0]
+        # the directive says 12 in / 18 out; this render fades out over 40 frames (n=105, out_start=65)
+        cover, fades = checks.cover_and_fades(s, v, {'over.mov': dict(n=105, in_full=0, out_start=65, coverage='fullscreen')})
+        self.assertIn((300 - 40, 300 + 12), fades)
+        self.assertEqual(cover, [(195 + 12, 300 - 40)])
+
+    def test_profiles_are_collected_from_sidecars_for_graphic_clips_only(self):
+        panels.write_sidecar(self.render, 100, 0, 82, 'fullscreen')
+        s = snap([clip('video', 4, 'Motion', 0, 100, file=self.render), clip('video', 2, 'Camera 1 (principale)', 0, 100, file='c.mov')])
+        from montage_engine.series import role_of
+        got = panels.profiles_for_snapshot(s, role_of)
+        self.assertEqual(list(got), [self.render])
+
+    def test_chains_use_the_profile_of_the_file(self):
+        pa = dict(in_full=0, out_start=82, n=100, coverage='fullscreen')
+        a, b = clip('video', 4, 'Motion', 1000, 1100, 'Lili01_v001.mov', file='/m/a.mov'), clip('video', 4, 'Motion', 1110, 1210, 'Lili02_v003.mov', file='/m/b.mov')
+        plans = panels.plan_chains([(a, 'chapter'), (b, 'chapter')], {'/m/a.mov': pa, '/m/b.mov': pa})
+        self.assertEqual(plans[0]['new_start'], 1070)
 
 
 class CamerasTest(unittest.TestCase):

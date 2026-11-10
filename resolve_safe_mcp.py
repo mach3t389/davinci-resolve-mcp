@@ -285,15 +285,16 @@ def check_timeline(timeline_id: str, video_type: str = '', series: str = '', wav
     land on sound. Thresholds come from the layered directives (video_type e.g. "interview", series e.g.
     "masterclass"); track roles come from track NAMES. editor_timeline_id compares the length with the editor's
     timeline. Nothing is written to Resolve."""
-    from montage_engine import checks
+    from montage_engine import checks, panels
     from montage_engine.model import snapshot_from_resolve
-    from montage_engine.series import SERIES, VIDEO_TYPES, missing_roles, resolve_directives
+    from montage_engine.series import SERIES, VIDEO_TYPES, missing_roles, resolve_directives, role_of
     with lock:
         _, p = project()
         snap = snapshot_from_resolve(find(p, timeline_id))
         editor = snapshot_from_resolve(find(p, editor_timeline_id)) if editor_timeline_id else None
     values, _ = resolve_directives(type_=VIDEO_TYPES.get(video_type), series=SERIES.get(series))
-    report = checks.run_all(snap, values, with_waveform=waveform, editor=editor)
+    profiles = panels.profiles_for_snapshot(snap, role_of)          # Motion sidecars only: no ffmpeg pass here
+    report = checks.run_all(snap, values, with_waveform=waveform, editor=editor, profiles=profiles)
     report['missing_roles'] = missing_roles(snap)
     report['findings'] = report['findings'][:200]
     report['lines'] = report['lines'][:200]

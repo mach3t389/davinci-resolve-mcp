@@ -11,7 +11,7 @@ Remplace peu à peu les scripts de `montage_tools/` (gardés comme référence :
 | `transcribe_source.py` | Transcrit une source une seule fois (Whisper + alignement), à lancer avec le venv WhisperX | non (modèles) |
 | `checks.py` | Contrôles en lecture seule : image = son, plans courts, part des caméras, jump cuts, coupes dans un fondu, trous de plans d'appui, restes, coupes sur du son (forme d'onde) | oui |
 | `passes.py` | Passe OTIO générique (retirer des plages, insérer des pauses), versions numérotées, coupes au silence, restauration des fondus après import | OTIO oui; adaptateur Resolve non |
-| `panels.py` | Profil de transparence mesuré d'un rendu, sorte de panneau (chapitre ou par-dessus la parole), enchaînement des panneaux rapprochés | oui |
+| `panels.py` | Fondus d'un rendu **lus** dans son fichier d'infos `<rendu>.mov.motion.json` (le moteur Motion les connaît déjà); mesure ffmpeg de la transparence seulement en repli; sorte de panneau (chapitre ou par-dessus la parole); couverture (plein écran ou partielle); enchaînement des panneaux rapprochés | oui |
 | `cameras.py` | Plan d'alternance des caméras selon les directives (part, durées, jump cuts, zones de fondu) et son application sur une copie | oui (plan); l'application non |
 | `broll.py` | Mini-scènes de b-roll, plans non utilisés rangés après la fin (jamais supprimés) | oui |
 | `cli.py` | `check` et `words` en ligne de commande | non |
@@ -23,6 +23,22 @@ Remplace peu à peu les scripts de `montage_tools/` (gardés comme référence :
 .venv\Scripts\python.exe -m montage_engine.cli words "Lili V4.1 - ..." "F:\Masterclass\...\Transcriptions"
 "D:\Vibe coding\whisperx\.venv\Scripts\python.exe" -m montage_engine.transcribe_source "<dossier Transcriptions>" "<rush1.mov>" "<rush2.mov>"
 ```
+
+## Fondus des panneaux : lus, pas calculés (précision d'Alexis, 10 nov. 2026)
+
+Le moteur d'animation (Motion/Remotion) connaît les fondus de ce qu'il rend. L'étape de rendu doit donc écrire à côté du
+`.mov` un fichier `<nom>_v001.mov.motion.json` :
+
+```json
+{"n": 100, "in_full": 0, "out_start": 82, "coverage": "fullscreen"}
+```
+
+`n` = images du rendu, `in_full` = première image pleinement visible, `out_start` = image où le fondu de sortie commence,
+`coverage` = `fullscreen` (transition intégrée à un panneau plein écran) ou `partial` (overlay sur l'image, possiblement
+sur plusieurs plans). Seul un panneau plein écran contraint les coupes autour de ses fondus; un overlay `partial` laisse
+la caméra changer dessous. Sans fichier d'infos (stock, visuels tiers), `--measure-alpha` mesure la transparence avec ffmpeg
+et en déduit la couverture; sans mesure, le contrôle reste prudent (plein écran, fondus des directives).
+`panels.write_sidecar(...)` écrit ce fichier. À brancher dans l'étape de rendu de Motion (`npm run render`) et du module Motion de Desktop.
 
 ## Portée des règles
 

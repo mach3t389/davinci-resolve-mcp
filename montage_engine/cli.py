@@ -11,10 +11,10 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from montage_engine import anchors, checks  # noqa: E402
+from montage_engine import anchors, checks, panels  # noqa: E402
 from montage_engine.model import snapshot_from_resolve, tc  # noqa: E402
 from montage_engine.series import (SERIES, VIDEO_TYPES, explain, missing_roles, resolve_directives,  # noqa: E402
-                                   roles_of)
+                                   role_of, roles_of)
 
 
 def _timeline(name):
@@ -30,7 +30,11 @@ def cmd_check(a):
     values, prov = resolve_directives(type_=VIDEO_TYPES.get(a.type), series=SERIES.get(a.series))
     snap = snapshot_from_resolve(_timeline(a.timeline))
     editor = snapshot_from_resolve(_timeline(a.editor)) if a.editor else None
-    report = checks.run_all(snap, values, with_waveform=a.waveform, editor=editor)
+    profiles = panels.profiles_for_snapshot(snap, role_of, measure=a.measure_alpha)
+    report = checks.run_all(snap, values, with_waveform=a.waveform, editor=editor, profiles=profiles)
+    report['fade_profiles'] = {'sidecar': sum(p.get('source') == 'sidecar' for p in profiles.values()),
+                               'measured': sum(p.get('source') == 'measured' for p in profiles.values()),
+                               'partial_overlays': sum(p.get('coverage') == 'partial' for p in profiles.values())}
     report['roles'] = {f'{k}{i}': v for (k, i), v in roles_of(snap).items()}
     report['missing_roles'] = missing_roles(snap)
     if a.json:
@@ -40,6 +44,7 @@ def cmd_check(a):
     print('roles:', report['roles'])
     if report['missing_roles']:
         print('missing roles:', report['missing_roles'])
+    print('fade information:', report['fade_profiles'])
     print('camera share:', {f'V{k}': f'{v:.0%}' for k, v in report['camera_share'].items()})
     for line in report['lines']:
         print(line)
@@ -67,6 +72,7 @@ def main(argv=None):
     c.add_argument('--editor')
     c.add_argument('--json', action='store_true')
     c.add_argument('--explain', action='store_true')
+    c.add_argument('--measure-alpha', action='store_true', help='measure the alpha with ffmpeg for renders without a sidecar (slow)')
     c.set_defaults(func=cmd_check)
     w = sub.add_parser('words')
     w.add_argument('timeline')
