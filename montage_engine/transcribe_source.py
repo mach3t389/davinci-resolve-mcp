@@ -21,14 +21,32 @@ def extract_audio(media, wav):
                     '-c:a', 'pcm_s16le', str(wav)], check=True)
 
 
+_MODELS = {}
+
+
+def _model(name):
+    """Loaded once per run: reloading the model for every rush would cost more than short files take."""
+    if name not in _MODELS:
+        from faster_whisper import WhisperModel
+        _MODELS[name] = WhisperModel(name, device='cpu', compute_type='int8')
+    return _MODELS[name]
+
+
+def _align_model(language):
+    key = ('align', language)
+    if key not in _MODELS:
+        import whisperx
+        _MODELS[key] = whisperx.load_align_model(language_code=language, device='cpu')
+    return _MODELS[key]
+
+
 def transcribe(media, language='fr', model_name='large-v3-turbo', align=True, hint=None):
-    from faster_whisper import WhisperModel
     import whisperx
     with tempfile.TemporaryDirectory() as tmp:
         wav = Path(tmp) / 'a.wav'
         extract_audio(media, wav)
         audio = whisperx.load_audio(str(wav))
-        model = WhisperModel(model_name, device='cpu', compute_type='int8')
+        model = _model(model_name)
         segs, _ = model.transcribe(audio, language=language, word_timestamps=True, initial_prompt=hint,
                                    vad_filter=True)
         segs = list(segs)
@@ -36,7 +54,7 @@ def transcribe(media, language='fr', model_name='large-v3-turbo', align=True, hi
         aligned = False
         if align and segs:
             try:
-                am, meta = whisperx.load_align_model(language_code=language, device='cpu')
+                am, meta = _align_model(language)
                 res = whisperx.align([dict(text=x.text, start=x.start, end=x.end) for x in segs], am, meta, audio,
                                      'cpu', return_char_alignments=False)
                 aw = [dict(w=w['word'], s=w['start'], e=w['end']) for s in res['segments'] for w in s.get('words', [])
