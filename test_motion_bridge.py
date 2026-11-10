@@ -69,6 +69,19 @@ class MotionBridgeTest(unittest.TestCase):
         self.assertEqual(Path(result['previous_file']), archived.resolve())
         self.assertFalse(v1.exists())  # out/ keeps only the version Resolve uses
 
+    def test_fade_information_follows_the_render_when_it_is_archived_and_on_undo(self):
+        v1, v2 = render('Fade_v001.mov'), render('Fade_v002.mov')
+        side1 = Path(str(v1) + '.motion.json')
+        side1.write_text('{"n": 10, "in_full": 0, "out_start": 8, "coverage": "partial"}')
+        self.bridge.import_clip(v1)
+        first = self.bridge.replace_clip('m1', v2)
+        archived_side = TMP / motion_bridge.ARCHIVE / 'Fade_v001.mov.motion.json'
+        self.assertTrue(archived_side.is_file())
+        self.assertFalse(side1.exists())
+        self.bridge.replace_clip('m1', first['previous_file'])          # undo
+        self.assertTrue(side1.is_file())
+        self.assertFalse(archived_side.exists())
+
     def test_undo_brings_archived_version_back_to_out(self):
         v1, v2 = render('Undo_v001.mov'), render('Undo_v002.mov')
         self.bridge.import_clip(v1)

@@ -104,6 +104,25 @@ class FadeInformationTest(unittest.TestCase):
         self.assertEqual(panels.profile_from_alpha([60.0] * 50)['coverage'], 'partial')      # a lower third
         self.assertEqual(panels.profile_from_alpha([1.0] * 5)['coverage'], 'fullscreen')     # 0..1 scale
 
+    def test_a_10_bit_render_is_measured_on_the_right_scale(self):
+        """Remotion renders yuva444p10le: without format=gray an opaque frame reads 3760 and everything looks full screen."""
+        import shutil
+        import subprocess
+        if not shutil.which('ffmpeg'):
+            self.skipTest('ffmpeg is not installed')
+        out = {}
+        for name, alpha in (('full', 'if(lt(N,2),0,if(lt(N,14),(N-2)*1023/12,if(lt(N,80),1023,if(lt(N,96),(95-N)*1023/16,0))))'),
+                            ('partial', 'if(lt(X,100),1023,0)')):
+            path = str(self.dir / f'{name}.mov')
+            r = subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i',
+                                f"color=c=white:s=320x180:r=24:d=4,format=yuva444p10le,geq=lum='lum(X,Y)':cb='cb(X,Y)':cr='cr(X,Y)':a='{alpha}'",
+                                '-c:v', 'prores_ks', '-profile:v', '4444', path], capture_output=True)
+            if r.returncode != 0:
+                self.skipTest('this ffmpeg cannot write ProRes 4444 with alpha')
+            out[name] = panels.alpha_profile_file(path)
+        self.assertEqual((out['full']['in_full'], out['full']['out_start'], out['full']['coverage']), (14, 80, 'fullscreen'))
+        self.assertEqual(out['partial']['coverage'], 'partial')
+
     def scene(self):
         from montage_engine import checks
         cams = [clip('video', 1, 'Camera 2 (slider)', 0, 600, file='c2.mov'),

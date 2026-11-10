@@ -26,13 +26,22 @@ def allowed(file_path):
         raise ValueError('Render file not found.')
     return path
 
+SIDECAR = '.motion.json'  # fade information written next to a render by the Motion render step
+
 def move(path, folder):
-    """Move without ever overwriting; returns the new path, or raises."""
+    """Move without ever overwriting; returns the new path, or raises. The render's fade-information file
+    (<name>.mov.motion.json) follows it, so an archived version keeps its fades and an undo brings them back."""
     target = folder / path.name
     if target.exists():
         raise FileExistsError(f'{target} already exists')
     folder.mkdir(exist_ok=True)
-    return Path(shutil.move(str(path), str(target)))
+    side, side_target = Path(str(path) + SIDECAR), Path(str(target) + SIDECAR)
+    if side.is_file() and side_target.exists():
+        raise FileExistsError(f'{side_target} already exists')
+    moved = Path(shutil.move(str(path), str(target)))
+    if side.is_file():
+        shutil.move(str(side), str(side_target))
+    return moved
 
 def same(a, b):
     return Path(a).resolve() == Path(b).resolve()

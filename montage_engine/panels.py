@@ -78,9 +78,11 @@ def profile_for(render_path, measure=True):
 
 
 def alpha_profile_file(path):
-    """Measure the real alpha of a render with ffmpeg (None when the file has no alpha channel)."""
+    """Measure the real alpha of a render with ffmpeg (None when the file has no alpha channel).
+    `format=gray` is required: on a 10-bit render (Remotion's yuva444p10le) the alpha otherwise comes out on a larger
+    scale (3760 for an opaque frame) and every render would look full screen."""
     res = subprocess.run(['ffmpeg', '-v', 'error', '-i', path, '-vf',
-                          'alphaextract,scale=160:90,signalstats,metadata=print:key=lavfi.signalstats.YAVG:file=-',
+                          'alphaextract,format=gray,scale=160:90,signalstats,metadata=print:key=lavfi.signalstats.YAVG:file=-',
                           '-f', 'null', '-'], capture_output=True, text=True)
     return profile_from_alpha([float(v) for v in re.findall(r'YAVG=([\d.]+)', res.stdout)])
 
