@@ -37,41 +37,62 @@ def move(path, folder):
 def same(a, b):
     return Path(a).resolve() == Path(b).resolve()
 
+def project_of(path):
+    """Video project name of a render: ...\\RM Charest\\Motion\\out\\x.mov -> "RM Charest"; None outside a Motion project."""
+    out = out_dir(Path(path).resolve())
+    return out.parent.parent.name if out else None
+
 class MotionBridge:
     def __init__(self, project):
         self.project = project
 
-    def _bin(self, pool, create):
-        root = pool.GetRootFolder()
-        found = [f for f in (root.GetSubFolderList() or []) if f.GetName() == BIN]
+    # One "Motion" bin per video project, inside that project's Media Pool folder (Master/<Project>/Motion).
+    # The project name is the folder that holds the Motion project: ...\RM Charest\Motion\out -> "RM Charest".
+    def _bins(self, pool):
+        bins = {}
+        for f in pool.GetRootFolder().GetSubFolderList() or []:
+            for s in f.GetSubFolderList() or []:
+                if s.GetName() == BIN:
+                    bins[f.GetName()] = s
+        return bins
+
+    def _bin(self, pool, name, create):
+        found = self._bins(pool).get(name)
         if found:
-            return found[0]
+            return found
         if not create:
-            raise ValueError(f'No "{BIN}" bin in the Media Pool; import a render first.')
-        folder = pool.AddSubFolder(root, BIN)
+            raise ValueError(f'No "{BIN}" bin in the Media Pool folder "{name}"; import a render first.')
+        parents = [f for f in (pool.GetRootFolder().GetSubFolderList() or []) if f.GetName() == name]
+        if len(parents) != 1:
+            raise ValueError(f'The Media Pool needs exactly one folder named "{name}" (the video project) to hold its Motion bin.')
+        folder = pool.AddSubFolder(parents[0], BIN)
         if not folder:
-            raise RuntimeError('Resolve did not create the Motion bin.')
+            raise RuntimeError(f'Resolve did not create the Motion bin in "{name}".')
         return folder
 
-    def _item(self, folder, media_id):
-        matches = [c for c in (folder.GetClipList() or []) if c.GetMediaId() == media_id]
+    def _find(self, pool, media_id):
+        """(project, bin folder, item) of a media ID, searched in every project's Motion bin."""
+        matches = [(name, folder, c) for name, folder in self._bins(pool).items()
+                   for c in (folder.GetClipList() or []) if c.GetMediaId() == media_id]
         if len(matches) != 1:
-            raise ValueError(f'Media ID not found in the "{BIN}" bin.')
+            raise ValueError(f'Media ID not found in a project "{BIN}" bin.')
         return matches[0]
 
     def clips(self):
         _, p = self.project()
-        folder = self._bin(p.GetMediaPool(), create=False)
-        return dict(bin=BIN, clips=[dict(media_id=c.GetMediaId(), name=c.GetName(),
-                    file=c.GetClipProperty('File Path')) for c in (folder.GetClipList() or [])])
+        pool = p.GetMediaPool()
+        return dict(clips=[dict(project=name, media_id=c.GetMediaId(), name=c.GetName(),
+                    file=c.GetClipProperty('File Path'))
+                    for name, folder in self._bins(pool).items() for c in (folder.GetClipList() or [])])
 
     def import_clip(self, file_path):
         path = allowed(file_path)
+        name = out_dir(path).parent.parent.name
         _, p = self.project()
         pool = p.GetMediaPool()
-        folder = self._bin(pool, create=True)
+        folder = self._bin(pool, name, create=True)
         if any(same(c.GetClipProperty('File Path'), path) for c in (folder.GetClipList() or [])):
-            raise ValueError('This render is already in the Motion bin.')
+            raise ValueError(f'This render is already in the "{name}/{BIN}" bin.')
         previous = pool.GetCurrentFolder()
         pool.SetCurrentFolder(folder)
         try:
@@ -82,15 +103,28 @@ class MotionBridge:
             raise RuntimeError('Resolve did not import exactly one clip.')
         item = items[0]
         return dict(media_id=item.GetMediaId(), name=item.GetName(), file=item.GetClipProperty('File Path'),
-                    fps=item.GetClipProperty('FPS'), bin=BIN)
+                    fps=item.GetClipProperty('FPS'), bin=f'{name}/{BIN}')
 
     def place_on_copy(self, timeline, placements, copy_name):
         """Duplicate `timeline`, add one new video track per distinct `track` name and put each Motion clip at its
         frame (offset from timeline start). Existing tracks are never edited; the copy is checked against the source."""
         _, p = self.project()
         pool = p.GetMediaPool()
-        folder = self._bin(pool, create=False)
-        items = {pl['media_id']: self._item(folder, pl['media_id']) for pl in placements}
+        items = {pl['media_id']: self._find(pool, pl['media_id'])[2] for pl in placements}
+        # Never mix two video projects: every clip comes from one project, and the timeline must not already hold another's.
+        wanted = {project_of(i.GetClipProperty('File Path')) for i in items.values()}
+        if len(wanted) != 1:
+            raise ValueError(f'Refused: the clips come from several projects: {sorted(map(str, wanted))}.')
+        present = set()
+        for kind_track in range(1, timeline.GetTrackCount('video') + 1):
+            for c in timeline.GetItemListInTrack('video', kind_track) or []:
+                mp = c.GetMediaPoolItem()
+                fp = mp.GetClipProperty('File Path') if mp else ''
+                if fp and project_of(fp):
+                    present.add(project_of(fp))
+        if present and present != wanted:
+            raise ValueError(f'Refused: the timeline already uses Motion clips of {sorted(present)}, '
+                             f'but these clips belong to {sorted(wanted)}.')
         length = timeline.GetEndFrame() - timeline.GetStartFrame()
         spans = {}
         for pl in placements:
@@ -150,12 +184,14 @@ class MotionBridge:
     def replace_clip(self, media_id, file_path):
         path = allowed(file_path)
         _, p = self.project()
-        folder = self._bin(p.GetMediaPool(), create=False)
-        item = self._item(folder, media_id)
+        _, folder, item = self._find(p.GetMediaPool(), media_id)
         before = item.GetClipProperty('File Path')
-        allowed(before)  # never relink a clip that did not come from a Motion project renders folder
+        old_path = allowed(before)  # never relink a clip that did not come from a Motion project renders folder
         if same(before, path):
             raise ValueError('Clip already points to this file.')
+        if out_dir(old_path) != out_dir(path):  # two video projects can share file names (Anim11_v001 ...)
+            raise ValueError(f'Refused: this clip belongs to project "{project_of(old_path)}" but the new file belongs to '
+                             f'"{project_of(path)}". A clip is only replaced by a newer render of the same project.')
         if path.parent.name == ARCHIVE:  # undo: an archived version becomes current again
             path = move(path, path.parent.parent)
         ok = item.ReplaceClip(str(path))

@@ -68,6 +68,29 @@ def inspect_timeline(timeline_id: str) -> dict:
                 tracks.append(dict(kind=kind, index=i, clips=clips))
         return dict(**summary(t), tracks=tracks, markers=t.GetMarkers() or {})
 
+@mcp.tool(annotations=READ)
+def inspect_clip_markers(timeline_id: str) -> dict:
+    """Read markers attached to clips (not the timeline ruler). Read only; only clips with markers are returned.
+    clip_frame is the marker position inside the clip as Resolve stores it (source frames);
+    timeline_frame is the estimate relative to timeline start = clip start + (clip_frame - source_start_frame)."""
+    with lock:
+        _, p = project()
+        t = find(p, timeline_id)
+        base = t.GetStartFrame()
+        found = []
+        for kind in ('video', 'audio'):
+            for i in range(1, t.GetTrackCount(kind) + 1):
+                for c in (t.GetItemListInTrack(kind, i) or []):
+                    ms = c.GetMarkers() or {}
+                    if not ms:
+                        continue
+                    ss = c.GetSourceStartFrame()
+                    found.append(dict(track=f'{kind}{i}', clip_id=c.GetUniqueId(), clip=c.GetName(),
+                                      start=c.GetStart() - base, end=c.GetEnd() - base, source_start_frame=ss,
+                                      markers=[dict(clip_frame=f, timeline_frame=c.GetStart() - base + (f - ss), **m)
+                                               for f, m in sorted(ms.items())]))
+        return dict(timeline=t.GetName(), clips_with_markers=len(found), clips=found)
+
 @mcp.tool(annotations=WRITE)
 def duplicate_for_marker_test(timeline_id: str) -> dict:
     """Create a fresh copy, preserving original; return the new ID for marker tests."""
@@ -233,6 +256,26 @@ def place_motion_clips(timeline_id: str, placements: list[dict], copy_name: str)
     with lock:
         _, p = project()
         return motion.place_on_copy(find(p, timeline_id), placements, copy_name)
+
+from stock_bridge import StockBridge
+stock = StockBridge(project)
+
+@mcp.tool(annotations=READ)
+def list_stock_clips(project_name: str) -> dict:
+    """List clips of the "Stock" bin (b-roll) in the Media Pool folder of a video project. Read only."""
+    with lock:
+        return stock.clips(project_name)
+
+@mcp.tool(annotations=WRITE)
+def place_stock_clips(timeline_id: str, placements: list[dict], copy_name: str) -> dict:
+    """Import stock videos (.mp4/.mov inside the project's "Assets" folder; the project must have Motion/.motion-project)
+    into the "Stock" bin and place SEGMENTS of them on NEW video tracks of a duplicate of the timeline (the source is never edited).
+    Each placement: {"file_path", "frame" (offset from timeline start), "track" (new track name),
+    "start_seconds" (in-point inside the clip), "duration_seconds"}. Video only, no audio. Existing tracks, clips and
+    markers are left as they are and checked afterwards; overlapping clips on one track are rejected."""
+    with lock:
+        _, p = project()
+        return stock.place_on_copy(find(p, timeline_id), placements, copy_name)
 
 @mcp.tool(annotations=WRITE)
 def replace_motion_clip(media_id: str, file_path: str) -> dict:

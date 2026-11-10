@@ -4,7 +4,9 @@ from pathlib import Path
 
 import motion_bridge
 
-PROJECT = Path(tempfile.mkdtemp())
+VIDEO = 'Lili'  # real layout: <video project>/Motion/.motion-project, renders in Motion/out
+PROJECT = Path(tempfile.mkdtemp()) / VIDEO / 'Motion'
+PROJECT.mkdir(parents=True)
 (PROJECT / motion_bridge.MARKER).write_text('')
 TMP = PROJECT / 'out'
 TMP.mkdir()
@@ -29,6 +31,7 @@ class Folder:
 class Pool:
     def __init__(self):
         self.root = Folder('Master')
+        self.root.subs.append(Folder(VIDEO))  # the video project's Media Pool folder holds its Motion bin
         self.current = self.root
     def GetRootFolder(self): return self.root
     def AddSubFolder(self, parent, name):
@@ -89,6 +92,18 @@ class MotionBridgeTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.bridge.import_clip(path)
 
+    def test_import_goes_to_the_video_project_bin(self):
+        self.assertEqual(self.bridge.import_clip(render('Bin_v001.mov'))['bin'], f'{VIDEO}/{motion_bridge.BIN}')
+
+    def test_refuses_replacement_by_a_render_of_another_project(self):
+        self.bridge.import_clip(render('Cross_v001.mov'))
+        other = Path(tempfile.mkdtemp()) / 'Autre' / 'Motion'
+        (other / 'out').mkdir(parents=True)
+        (other / motion_bridge.MARKER).write_text('')
+        (other / 'out' / 'Cross_v002.mov').write_bytes(b'x')
+        with self.assertRaises(ValueError):
+            self.bridge.replace_clip('m1', other / 'out' / 'Cross_v002.mov')
+
     def test_rejects_duplicate_import(self):
         v1 = render('Dup_v001.mov')
         self.bridge.import_clip(v1)
@@ -100,6 +115,7 @@ class TItem:
     def GetName(self): return self.name
     def GetStart(self): return self.start
     def GetEnd(self): return self.end
+    def GetMediaPoolItem(self): return None  # camera clips: not Motion renders
 
 class Timeline:
     def __init__(self, uid, tracks, markers):
