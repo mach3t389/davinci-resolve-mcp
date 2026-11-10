@@ -227,6 +227,30 @@ class PassesTest(unittest.TestCase):
         self.assertIsNone(passes.extend_to_silence(-30, [-30] * 9, -65))
         self.assertEqual(passes.room_tone([[-60, -40], [-65, -50]]), -50)
 
+    def test_silence_extension_plan_uses_waveform_and_real_cuts_only(self):
+        v = directives()
+        cams = [clip('video', 1, CAM2, 0, 100, file='c2.mov'), clip('video', 1, CAM2, 100, 300, file='c2.mov', src=500),
+                clip('video', 1, CAM2, 300, 500, file='c2.mov', src=900),
+                clip('video', 2, CAM1, 0, 100, file='c1.mov'), clip('video', 2, CAM1, 100, 300, file='c1.mov', src=500),
+                clip('video', 2, CAM1, 300, 500, file='c1.mov', src=900, enabled=False)]
+        audio = [clip('audio', 1, 'Audio 1', 0, 100, file='a.mov', src=0),
+                 clip('audio', 1, 'Audio 1', 100, 300, file='a.mov', src=500),
+                 clip('audio', 1, 'Audio 1', 300, 500, file='a.mov', src=900)]
+        s = snap(cams + audio, out=500)
+
+        def level(path, start_s, dur_s):
+            # first cut: sound for 2 more frames then silent; second cut: loud for 3 s (no silence)
+            end1, end2 = 100 / 24, (500 + 200) / 24
+            if abs(start_s - (end1 - 2 / 24)) < 1e-6: return -20.0
+            if abs(start_s - end1) < 1e-6 or abs(start_s - (end1 + 1 / 24)) < 1e-6: return -22.0
+            if start_s > end1 and start_s < end1 + 1: return -70.0
+            if start_s > end2 - 1: return -20.0
+            return -65.0
+
+        edits, unresolved = passes.plan_silence_extensions(s, v, level)
+        self.assertEqual([(e['P'], e['D'], e['extend']) for e in edits], [(100, 2, True)])
+        self.assertEqual([u[0] for u in unresolved], [300])
+
     def otio_timeline(self):
         import opentimelineio as otio
         R = otio.opentime.RationalTime
@@ -267,6 +291,16 @@ class PassesTest(unittest.TestCase):
             pos += round(item.duration().rescaled_to(24).value)
         self.assertEqual(pos, 150)
         self.assertEqual(round(tl.duration().value), 400)      # the source timeline is untouched
+
+    def test_extend_moves_the_cut_to_the_silence_and_ripples(self):
+        tl = self.otio_timeline()
+        out, info = passes.transform_otio(tl, [dict(P=100, Q=100, D=6, extend=True)], 'dst')
+        self.assertEqual(info['NEWEND'], 406)
+        cam = [c for c in out.tracks[0] if c.name == 'cam.mov']
+        self.assertEqual([round(c.source_range.duration.value) for c in cam], [106, 300])   # first piece +6 frames
+        self.assertEqual([round(c.source_range.start_time.value) for c in cam], [0, 100])
+        lens = {round(t.duration().rescaled_to(24).value) for t in out.tracks}
+        self.assertEqual(lens, {406})
 
     def test_otio_pass_refuses_transitions_on_cut_tracks(self):
         import opentimelineio as otio

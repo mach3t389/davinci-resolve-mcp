@@ -27,7 +27,9 @@ VIDEO_TYPES = {
 }
 SERIES = {
     'masterclass': {
-        'cameras': {'main_share': 0.75, 'max_same_camera_seconds': 10.0},
+        'cameras': {'main_share': 0.75, 'max_same_camera_seconds': 10.0, 'main_min_seconds': 6,
+                    'secondary_seconds': [3, 10]},
+        'panels': {'chain_gap_frames': 24, 'crossfade_frames': 12},
         'overlays': {'default': {'fade_in_frames': 12, 'fade_out_frames': 18, 'pad_frames': 12},
                      'Visuels': {'fade_in_frames': 32, 'fade_out_frames': 36, 'pad_frames': 24}},
         'voice_isolation': 70,

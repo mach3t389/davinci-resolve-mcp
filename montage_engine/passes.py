@@ -88,7 +88,9 @@ def default_is_graphic(track_name, video_index=0):
 
 def transform_otio(tl, edits, new_name, fps=FPS, is_graphic=default_is_graphic):
     """Apply `edits` to every non-graphic track (cuts and pauses ripple) while graphics follow their content;
-    panels named in an edit's `panels` start at the start of its pause. Returns (new timeline, map dict).
+    panels named in an edit's `panels` start at the start of its pause. An edit {P: c, Q: c, D: k, extend: True}
+    moves the cut at c by k frames instead of inserting a pause: the outgoing clip of every cut track gets k more
+    frames of its own source (to land in a silence) and the rest ripples. Returns (new timeline, map dict).
     The source `tl` is never modified."""
     import opentimelineio as otio
 
@@ -183,7 +185,14 @@ def transform_otio(tl, edits, new_name, fps=FPS, is_graphic=default_is_graphic):
             cursor += L
         for k, rng in enumerate(kept):
             if k > 0 and es[k - 1]['D']:
-                target.append(gap(es[k - 1]['D']))
+                prev = target[len(target) - 1] if len(target) else None
+                if es[k - 1].get('extend') and isinstance(prev, otio.schema.Clip):
+                    # extend the outgoing piece with D more frames of its own source (cut moved to the silence)
+                    sr = prev.source_range
+                    prev.source_range = otio.opentime.TimeRange(
+                        sr.start_time, sr.duration + otio.opentime.RationalTime(es[k - 1]['D'], sr.duration.rate))
+                else:
+                    target.append(gap(es[k - 1]['D']))
             for a, b, pc in pieces:
                 if rng['a'] <= a and b <= rng['b']:
                     target.append(pc)
@@ -216,6 +225,36 @@ def extend_to_silence(tail_db, after_db, room_db, margin_db=8.0, max_k=8):
         if v <= limit:
             return k
     return None
+
+
+def plan_silence_extensions(snap, values, level_db):
+    """Real cuts (the voice and every camera cut on the same frame) whose outgoing audio still has sound are
+    extended up to the first silent frame. -> (edits for transform_otio, unresolved cuts [(frame, tail_db)]).
+    level_db(file, start_seconds, duration_seconds) -> dB (checks.ffmpeg_level_db in production)."""
+    cuts_cfg = values['cuts']
+    max_k, margin = cuts_cfg['silence_max_extend_frames'], cuts_cfg['silence_margin_db']
+    ka = values['tracks']['pairs'][0][0]
+    voice = [c for c in snap.track('audio', ka) if c.has_media and c.start < snap.out_frame]
+    cam_cuts = [{c.start for c in snap.track('video', i)} for i in snap.tracks('video')
+                if role_of(snap.track_names.get(('video', i), '')).startswith('camera')]
+    probes = []
+    for a, b in zip(voice, voice[1:]):
+        if a.end != b.start or not all(b.start in s for s in cam_cuts):
+            continue
+        fps = a.media_fps
+        end_s = (a.src_start + a.length) / fps
+        tail = level_db(a.file, end_s - 2 / fps, 2 / fps)
+        after = [level_db(a.file, end_s + j / fps, 1 / fps) for j in range(max_k + 1)]
+        probes.append((a.end, tail, after))
+    room = room_tone([p[2] for p in probes])
+    edits, unresolved = [], []
+    for frame, tail, after in probes:
+        k = extend_to_silence(tail, after, room, margin, max_k)
+        if k is None:
+            unresolved.append((frame, round(tail, 1)))
+        elif k > 0:
+            edits.append(dict(P=frame, Q=frame, D=k, extend=True, text=f'coupe prolongee de {k} images'))
+    return edits, unresolved
 
 
 # ---- Resolve adapters (not unit tested: they need a running Resolve) -------------------------------------------

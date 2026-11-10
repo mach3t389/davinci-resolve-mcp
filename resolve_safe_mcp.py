@@ -277,6 +277,28 @@ def place_stock_clips(timeline_id: str, placements: list[dict], copy_name: str) 
         _, p = project()
         return stock.place_on_copy(find(p, timeline_id), placements, copy_name)
 
+@mcp.tool(annotations=READ)
+def check_timeline(timeline_id: str, video_type: str = '', series: str = '', waveform: bool = False,
+                   editor_timeline_id: str = '') -> dict:
+    """Read-only quality checks of a timeline (montage engine, doc 25): picture = sound, short shots, camera share,
+    same-camera jump cuts, cuts inside overlay fades, b-roll gaps, audio remnants and, with waveform=true, cuts that
+    land on sound. Thresholds come from the layered directives (video_type e.g. "interview", series e.g.
+    "masterclass"); track roles come from track NAMES. editor_timeline_id compares the length with the editor's
+    timeline. Nothing is written to Resolve."""
+    from montage_engine import checks
+    from montage_engine.model import snapshot_from_resolve
+    from montage_engine.series import SERIES, VIDEO_TYPES, missing_roles, resolve_directives
+    with lock:
+        _, p = project()
+        snap = snapshot_from_resolve(find(p, timeline_id))
+        editor = snapshot_from_resolve(find(p, editor_timeline_id)) if editor_timeline_id else None
+    values, _ = resolve_directives(type_=VIDEO_TYPES.get(video_type), series=SERIES.get(series))
+    report = checks.run_all(snap, values, with_waveform=waveform, editor=editor)
+    report['missing_roles'] = missing_roles(snap)
+    report['findings'] = report['findings'][:200]
+    report['lines'] = report['lines'][:200]
+    return report
+
 @mcp.tool(annotations=WRITE)
 def replace_motion_clip(media_id: str, file_path: str) -> dict:
     """Relink a "Motion" bin clip to a newer render; every timeline use updates.
