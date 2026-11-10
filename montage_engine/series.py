@@ -102,8 +102,9 @@ def missing_roles(snapshot, needed=('camera_main', 'camera_secondary')):
 
 def overlay_params(values, clip_name):
     """Fade parameters for a graphic clip: a name-prefix entry ('Visuels') wins over 'default'."""
-    table = values['overlays']
+    table = values.get('overlays', {})
+    default = table.get('default', {})
     for key, params in table.items():
         if key != 'default' and clip_name.startswith(key):
-            return {**table['default'], **params}
-    return dict(table['default'])
+            return {**default, **params}
+    return dict(default)
