@@ -7,8 +7,13 @@ clip, including next to a pause):
   speech  = frames at least SPEECH_DB over the quietest frame of the window,
   silence = frames under SILENCE_DB over it,
   breath  = a soft bump (between the two) that comes back AFTER a real silence, before the cut.
-`find_breaths` reports them; `plan_breath_trims` turns them into edits for passes.transform_otio (cut a little after
-the voice), always applied on a numbered copy. First run on Lili V4.1: 19 of 221 voice cuts.
+`find_breaths` reports them, as places TO LISTEN TO only.
+
+NOT RELIABLE ENOUGH TO CUT (real run, 12 Nov 2026): on Lili's camera-2 sound a softly spoken word ("eux", "mais",
+"qui suit aussi") measures almost like the silence, so 8 of the 18 pieces removed on a copy were real words, and the
+cuts also broke the picture of a finished edit. The automatic correction was removed from the command line; never cut
+from this alone. A candidate that contains the START of a transcribed word is dropped (word starts are reliable, the
+transcript only stretches word ends); see `without_word_starts`.
 """
 import array
 import math
@@ -99,8 +104,31 @@ def check_breaths(snap, values=None, levels=frame_levels, profiles=None):
     return out
 
 
+def without_word_starts(found, snap, store, audio_track=1):
+    """Drop the candidates whose breath region holds the start of a transcribed word: that is speech, not a breath."""
+    keep = []
+    clips = [c for c in snap.track('audio', audio_track) if c.has_media and c.file]
+    for b in found:
+        lo, hi = (b['frame'] - b['after_voice'], b['frame']) if b['side'] == 'end' else (b['frame'], b['frame'] + b['after_voice'])
+        hit = False
+        for c in clips:
+            if c.end <= lo or c.start >= hi:
+                continue
+            fps = c.media_fps or 24
+            s0 = (c.src_start + max(lo, c.start) - c.start) / fps
+            s1 = (c.src_start + min(hi, c.end) - c.start) / fps
+            tr = store.load(c.file)
+            if tr and any(s0 <= w['s'] < s1 for w in tr['words']):
+                hit = True
+        if not hit:
+            keep.append(b)
+    return keep
+
+
 def plan_breath_trims(found, keep=KEEP_AFTER_VOICE):
-    """Edits {P, Q, D: 0} removing the silence and the breath between the voice and the cut (all tracks ripple)."""
+    """Edits {P, Q, D: 0} removing the silence and the breath between the voice and the cut (all tracks ripple).
+    Kept for tests and a FIRST edit only: do not use on a finished edit (it moves the picture) nor without
+    `without_word_starts` (soft words were cut on Lili)."""
     edits = []
     for b in found:
         k = b['after_voice'] - keep

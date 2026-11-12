@@ -15,7 +15,7 @@ Remplace peu à peu les scripts de `montage_tools/` (gardés comme référence :
 | `cameras.py` | Plan d'alternance des caméras selon les directives (part, durées, jump cuts, zones de fondu) et son application sur une copie | oui (plan); l'application non |
 | `broll.py` | Mini-scènes de b-roll, plans non utilisés rangés après la fin (jamais supprimés) | oui |
 | `audio_rules.py` | Règles du son des directives : pauses raccourcies (`cuts.keep_pause_seconds`), son en avance / coupe en J (`cuts.audio_lead_frames`), niveau sonore (`audio.target_lufs`, via `NormalizeAudioLevel` de Resolve). La baisse de la musique sous la voix n'est pas applicable (pas d'automation du volume dans l'API) | oui (pauses, coupe en J); niveau sonore avec un faux Resolve |
-| `breaths.py` | Respirations laissées aux coupes de voix : la forme d'onde, image par image, trouve la fin de la voix, un vrai silence puis un petit son doux avant la coupe (la transcription étire le dernier mot et ne suffit pas). Contrôle `check --breaths` et correction `pass --breaths` (coupe 2 images après la voix, sur une copie) | oui (profil réel de Lili) |
+| `breaths.py` | Respirations laissées aux coupes de voix : la forme d'onde, image par image, trouve la fin de la voix, un vrai silence puis un petit son doux avant la coupe (la transcription étire le dernier mot et ne suffit pas). Contrôle `check --breaths` (à écouter seulement). La correction automatique a été retirée : sur une copie de Lili, 8 des 18 retraits contenaient de vrais mots dits doucement (son de la caméra 2 très bas), et retirer des images casse un montage fini | oui (profil réel de Lili) |
 | `cli.py` | `check` et `words` en ligne de commande | non |
 
 ## Utilisation (Resolve ouvert, scripting externe activé)

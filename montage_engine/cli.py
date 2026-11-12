@@ -3,9 +3,9 @@
   python -m montage_engine.cli check "<timeline>" [--type interview] [--series masterclass] [--waveform] [--breaths]
                                 [--editor "<timeline>"] [--json]
   python -m montage_engine.cli words "<timeline>" <store folder> [--from 00:10 --to 00:40]
-  python -m montage_engine.cli pass <plan.json> [--apply] [--type interview] [--series masterclass] [--pauses <store>]
-      --pauses: also shorten the pauses between sentences to cuts.keep_pause_seconds (words from the transcripts).
-      --breaths: also cut the breaths left at voice cuts (the cut lands just after the voice; see breaths.py).
+  python -m montage_engine.cli pass <plan.json> [--apply] [--type interview] [--series masterclass]
+      Pauses and breaths are no longer shortened automatically: on Lili (12 Nov 2026) it cut soft words and broke the
+      finished edit. See README, Limites connues.
       The sound rules of the directives (J cuts, loudness) are applied to the NEW copy when they are set.
       plan.json = {"SRC": "<timeline>", "edits": [{"P": 100, "Q": 124, "D": 0, "text": "..."}], "NEW": "<optional>"}
       Without --apply: only the plan (new length, versions). With --apply: a NEW numbered copy is created from SRC
@@ -76,26 +76,6 @@ def cmd_pass(a):
     end = plan['expect_end']
     video_rules = json.loads(a.video_rules) if a.video_rules else None
     values, _ = resolve_directives(type_=VIDEO_TYPES.get(a.type), series=SERIES.get(a.series), video=video_rules)
-    if a.pauses:
-        snap_src = snapshot_from_resolve(src)
-        words, missing = anchors.place_words(snap_src, anchors.TranscriptStore(a.pauses))
-        busy = [(e['P'], max(e['Q'], e['P'] + 1)) for e in plan['edits']]
-        planned = audio_rules.plan_pause_trims(words, values, camera_runs=audio_rules.camera_runs(snap_src))
-        trims = [e for e in audio_rules.outside_overlays(planned, snap_src, lambda n: role_of(n).startswith('camera'))
-                 if not any(e['P'] < b and a0 < e['Q'] for a0, b in busy)]
-        print(f'pauses raccourcissables (changement de camera possible, plans assez longs): {len(planned)}, sous un panneau ou un plan d appui (laissees): {len(planned) - len(trims)}')
-        plan['edits'] = plan['edits'] + trims
-        print(f'pauses raccourcies: {len(trims)} (sources sans transcription: {missing})')
-    if a.breaths:
-        snap_b = snapshot_from_resolve(src)
-        found_b = breaths.find_breaths(snap_b)
-        busy = [(e['P'], max(e['Q'], e['P'] + 1)) for e in plan['edits']]
-        planned_b = breaths.plan_breath_trims(found_b)
-        trims_b = [e for e in audio_rules.outside_overlays(planned_b, snap_b, lambda n: role_of(n).startswith('camera'))
-                   if not any(e['P'] < b and a0 < e['Q'] for a0, b in busy)]
-        plan['edits'] = plan['edits'] + trims_b
-        print(f'respirations aux coupes: {len(found_b)}, coupees: {len(trims_b)} '
-              f'(sous un panneau ou un plan d appui, ou deja touchees par une autre modification: {len(planned_b) - len(trims_b)})')
     print('regles du son:', {k: v for k, v in dict(
         pause=values.get('cuts', {}).get('keep_pause_seconds'), coupe_j=values.get('cuts', {}).get('audio_lead_frames'),
         lufs=values.get('audio', {}).get('target_lufs')).items() if v is not None} or 'aucune')
@@ -160,8 +140,6 @@ def main(argv=None):
     q.add_argument('--series')
     q.add_argument('--work', default='work/pass')
     q.add_argument('--video-rules', help='JSON directive layer for this video, e.g. {"cuts": {"audio_lead_frames": 6}}')
-    q.add_argument('--breaths', action='store_true', help='cut the breaths left at voice cuts')
-    q.add_argument('--pauses', metavar='STORE', help='transcripts folder: shorten pauses to cuts.keep_pause_seconds')
     q.set_defaults(func=cmd_pass)
     w = sub.add_parser('words')
     w.add_argument('timeline')
