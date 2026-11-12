@@ -299,12 +299,15 @@ CHECKS = [check_sync, check_min_shot, check_max_same_camera, check_camera_share,
           check_cut_in_fade_zone, check_broll_gaps, check_remnants]
 
 
-def run_all(snap, values, with_waveform=False, level_db=ffmpeg_level_db, editor=None, profiles=None):
+def run_all(snap, values, with_waveform=False, level_db=ffmpeg_level_db, editor=None, profiles=None, with_breaths=False):
     found = []
     for chk in CHECKS:
         found += chk(snap, values, profiles=profiles)
     if with_waveform:
         found += check_cut_on_sound(snap, values, level_db)
+    if with_breaths:
+        from .breaths import check_breaths          # reads the media with ffmpeg, like the waveform check
+        found += check_breaths(snap, values)
     if editor is not None:
         found += compare_to_editor(snap, editor)
     found.sort(key=lambda x: (x['frame'], x['check']))

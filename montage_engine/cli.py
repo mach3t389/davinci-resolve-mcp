@@ -1,10 +1,11 @@
 """Command line for the engine. Read-only unless a pass is requested.
 
-  python -m montage_engine.cli check "<timeline>" [--type interview] [--series masterclass] [--waveform]
+  python -m montage_engine.cli check "<timeline>" [--type interview] [--series masterclass] [--waveform] [--breaths]
                                 [--editor "<timeline>"] [--json]
   python -m montage_engine.cli words "<timeline>" <store folder> [--from 00:10 --to 00:40]
   python -m montage_engine.cli pass <plan.json> [--apply] [--type interview] [--series masterclass] [--pauses <store>]
       --pauses: also shorten the pauses between sentences to cuts.keep_pause_seconds (words from the transcripts).
+      --breaths: also cut the breaths left at voice cuts (the cut lands just after the voice; see breaths.py).
       The sound rules of the directives (J cuts, loudness) are applied to the NEW copy when they are set.
       plan.json = {"SRC": "<timeline>", "edits": [{"P": 100, "Q": 124, "D": 0, "text": "..."}], "NEW": "<optional>"}
       Without --apply: only the plan (new length, versions). With --apply: a NEW numbered copy is created from SRC
@@ -18,7 +19,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from montage_engine import anchors, audio_rules, checks, panels, passes  # noqa: E402
+from montage_engine import anchors, audio_rules, breaths, checks, panels, passes  # noqa: E402
 from montage_engine.model import snapshot_from_resolve, tc  # noqa: E402
 from montage_engine.series import (SERIES, VIDEO_TYPES, explain, missing_roles, resolve_directives,  # noqa: E402
                                    role_of, roles_of)
@@ -38,7 +39,7 @@ def cmd_check(a):
     snap = snapshot_from_resolve(_timeline(a.timeline))
     editor = snapshot_from_resolve(_timeline(a.editor)) if a.editor else None
     profiles = panels.profiles_for_snapshot(snap, role_of, measure=a.measure_alpha)
-    report = checks.run_all(snap, values, with_waveform=a.waveform, editor=editor, profiles=profiles)
+    report = checks.run_all(snap, values, with_waveform=a.waveform, editor=editor, profiles=profiles, with_breaths=a.breaths)
     report['fade_profiles'] = {'sidecar': sum(p.get('source') == 'sidecar' for p in profiles.values()),
                                'measured': sum(p.get('source') == 'measured' for p in profiles.values()),
                                'partial_overlays': sum(p.get('coverage') == 'partial' for p in profiles.values())}
@@ -85,6 +86,16 @@ def cmd_pass(a):
         print(f'pauses raccourcissables (changement de camera possible, plans assez longs): {len(planned)}, sous un panneau ou un plan d appui (laissees): {len(planned) - len(trims)}')
         plan['edits'] = plan['edits'] + trims
         print(f'pauses raccourcies: {len(trims)} (sources sans transcription: {missing})')
+    if a.breaths:
+        snap_b = snapshot_from_resolve(src)
+        found_b = breaths.find_breaths(snap_b)
+        busy = [(e['P'], max(e['Q'], e['P'] + 1)) for e in plan['edits']]
+        planned_b = breaths.plan_breath_trims(found_b)
+        trims_b = [e for e in audio_rules.outside_overlays(planned_b, snap_b, lambda n: role_of(n).startswith('camera'))
+                   if not any(e['P'] < b and a0 < e['Q'] for a0, b in busy)]
+        plan['edits'] = plan['edits'] + trims_b
+        print(f'respirations aux coupes: {len(found_b)}, coupees: {len(trims_b)} '
+              f'(sous un panneau ou un plan d appui, ou deja touchees par une autre modification: {len(planned_b) - len(trims_b)})')
     print('regles du son:', {k: v for k, v in dict(
         pause=values.get('cuts', {}).get('keep_pause_seconds'), coupe_j=values.get('cuts', {}).get('audio_lead_frames'),
         lufs=values.get('audio', {}).get('target_lufs')).items() if v is not None} or 'aucune')
@@ -136,6 +147,7 @@ def main(argv=None):
     c.add_argument('--type')
     c.add_argument('--series')
     c.add_argument('--waveform', action='store_true')
+    c.add_argument('--breaths', action='store_true', help='report breaths left at voice cuts (reads the media, slower)')
     c.add_argument('--editor')
     c.add_argument('--json', action='store_true')
     c.add_argument('--explain', action='store_true')
@@ -148,6 +160,7 @@ def main(argv=None):
     q.add_argument('--series')
     q.add_argument('--work', default='work/pass')
     q.add_argument('--video-rules', help='JSON directive layer for this video, e.g. {"cuts": {"audio_lead_frames": 6}}')
+    q.add_argument('--breaths', action='store_true', help='cut the breaths left at voice cuts')
     q.add_argument('--pauses', metavar='STORE', help='transcripts folder: shorten pauses to cuts.keep_pause_seconds')
     q.set_defaults(func=cmd_pass)
     w = sub.add_parser('words')
