@@ -180,11 +180,15 @@ def voice_clips(snapshot, audio_tracks=(1,)):
     return [c for c in snapshot.clips if c.kind == 'audio' and c.track in audio_tracks and c.has_media and c.file]
 
 
-def place_words(snapshot, store, audio_tracks=(1,)):
+def place_words(snapshot, store, audio_tracks=(1,), end=None):
     """Words of the voice clips of a timeline, in TIMELINE frames: [{'f0','f1','w','file','src0'}], sorted.
-    Never transcribes: a source without a transcript is reported in `missing`."""
+    Never transcribes: a source without a transcript is reported in `missing`. Only the edit counts: clips starting at
+    or after `end` (default: the snapshot's end of edit) are parked material and are ignored."""
+    end = snapshot.out_frame if end is None else end
     words, missing = [], set()
     for c in voice_clips(snapshot, audio_tracks):
+        if end and c.start >= end:
+            continue
         tr = store.load(c.file)
         if not tr:
             missing.add(c.file)

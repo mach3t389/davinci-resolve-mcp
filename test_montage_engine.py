@@ -95,6 +95,12 @@ class AnchorsTest(unittest.TestCase):
         s2 = snap([clip('audio', 1, 'Audio 1', 90, 190, file=f, src=20)])
         self.assertEqual(anchors.place_words(s2, self.store)[0][0]['f0'], 94)
 
+    def test_parked_material_after_the_end_of_the_edit_is_ignored(self):
+        f = str(self.media)
+        s = snap([clip('audio', 1, 'Audio 1', 0, 100, file=f, src=20), clip('audio', 1, 'Audio 1', 5000, 5100, file='/parked/x.mov')], out=1000)
+        words, missing = anchors.place_words(s, self.store)
+        self.assertEqual((len(words), missing), (2, []))              # the parked clip has no transcript and is not reported
+
     def test_source_without_transcript_is_reported_not_guessed(self):
         other = self.tmp / 'z.mov'
         other.write_bytes(b'q' * 100)
