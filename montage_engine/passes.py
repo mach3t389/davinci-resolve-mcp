@@ -348,6 +348,26 @@ def pass_markers(timeline, info, color_removed='Cyan', color_pause='Purple'):
     return n
 
 
+def new_findings(old_findings, new_findings, back, tol=1):
+    """Findings of the timeline AFTER a pass that did not exist before it (a cut in a pause creates a jump cut on the
+    same camera, for example). `back(new_frame)` maps a new frame to the old timeline (None inside a pause)."""
+    old = {(f['check'], f['frame']) for f in old_findings}
+    out = []
+    for f in new_findings:
+        o = back(f['frame'])
+        if o is None or not any((f['check'], o + d) in old for d in range(-tol, tol + 1)):
+            out.append(f)
+    return out
+
+
+def mark_findings(timeline, findings, color='Yellow', name='Verifier: cree par la passe'):
+    """One marker per finding on the new timeline (frames relative to the timeline start). Returns how many were added."""
+    n = 0
+    for f in findings:
+        n += bool(timeline.AddMarker(int(f['frame']), color, name, f['message'], max(int(f.get('frames', 1)), 1), ''))
+    return n
+
+
 def restore_after_import(project, src, new, fade_frames=12, audio_fade=3, time_sleep=time.sleep):
     """After an OTIO re-import: panel cross-dissolves (same name AND rank as in the source, so clips the editor split
     by hand keep theirs), audio fades at every pause, voice isolation copied from the source."""

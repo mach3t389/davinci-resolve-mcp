@@ -389,6 +389,21 @@ class PassesTest(unittest.TestCase):
         self.assertEqual(pos, 150)
         self.assertEqual(round(tl.duration().value), 400)      # the source timeline is untouched
 
+    def test_findings_created_by_a_pass_are_told_apart_from_old_ones(self):
+        kept, new_end, fwd, back = passes.build_map([dict(P=100, Q=124, D=0)], 1000)
+        f = lambda c, fr: dict(check=c, frame=fr, frames=1, message='m')
+        old = [f('same_camera_jump_cut', 500), f('min_shot', 50)]
+        new = [f('same_camera_jump_cut', 476), f('min_shot', 50), f('same_camera_jump_cut', 100)]   # 500 -> 476; the cut at 100 is new
+        created = passes.new_findings(old, new, back)
+        self.assertEqual([(x['check'], x['frame']) for x in created], [('same_camera_jump_cut', 100)])
+
+        class TL:
+            def __init__(self): self.added = []
+            def AddMarker(self, fr, color, name, note, dur, data): self.added.append((fr, color)); return True
+        tl = TL()
+        self.assertEqual(passes.mark_findings(tl, created), 1)
+        self.assertEqual(tl.added, [(100, 'Yellow')])
+
     def test_extend_moves_the_cut_to_the_silence_and_ripples(self):
         tl = self.otio_timeline()
         out, info = passes.transform_otio(tl, [dict(P=100, Q=100, D=6, extend=True)], 'dst')
