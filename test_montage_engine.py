@@ -146,20 +146,42 @@ class AnchorsTest(unittest.TestCase):
         from types import SimpleNamespace as NS
         from montage_engine import transcribe_source as ts
         ww = lambda t, s, e: NS(word=' ' + t, start=s, end=e)
-        whisper = [NS(start=0.0, end=3.0, words=[ww('En', 0.0, 0.2), ww('2026', 0.3, 0.9), ww('oui', 1.0, 1.3)]),
+        whisper = [NS(start=0.0, end=3.0, words=[ww('En', 0.0, 0.2), ww('2026', 0.3, 0.9), ww('elle-même', 0.95, 1.3), ww('oui', 1.4, 1.6)]),
                    NS(start=4.0, end=6.0, words=[ww('Je', 4.0, 4.2), ww('reprends', 4.3, 4.9)])]
         aligned = [{'words': [{'word': 'En', 'start': 0.05, 'end': 0.25}, {'word': '2026'},
-                              {'word': 'oui', 'start': 1.05, 'end': 1.35}]},
-                   {'words': []}]                                       # the aligner failed on the second segment
-        words, fallbacks = ts.merge_aligned(whisper, aligned)
-        self.assertEqual([w['w'] for w in words], ['En', '2026', 'oui', 'Je', 'reprends'])
-        self.assertEqual(fallbacks, 1)
-        year = words[1]
-        self.assertEqual((year['s'], year['e']), (0.25, 1.05))           # timed between its neighbours
-        self.assertEqual(words[3]['s'], 4.0)                              # Whisper's time for the failed segment
-        # segments that cannot be paired: Whisper's words, nothing lost
-        w2, f2 = ts.merge_aligned(whisper, aligned[:1])
-        self.assertEqual(len(w2), 5)
+                              {'word': 'oui', 'start': 1.45, 'end': 1.65}]},      # the aligner dropped "elle-même"
+                   {'words': []}]                                                 # and failed on the second segment
+        words, stats = ts.merge_aligned(whisper, aligned)
+        self.assertEqual([w['w'] for w in words], ['En', '2026', 'elle-même', 'oui', 'Je', 'reprends'])    # nothing lost
+        self.assertEqual((words[0]['s'], words[3]['s']), (0.05, 1.45))          # aligner's times where it placed the word
+        self.assertEqual(words[2]['s'], 0.95)                                    # Whisper's time for the dropped word
+        self.assertEqual(words[4]['s'], 4.0)                                     # Whisper's time for the failed segment
+        self.assertEqual(stats, dict(words_whisper_timing=3))
+        w2, s2 = ts.merge_aligned(whisper, aligned[:1])                          # different segmentation: same result
+        self.assertEqual((len(w2), s2['words_whisper_timing']), (6, 3))
+        w3, s3 = ts.merge_aligned(whisper, [])                                   # no alignment at all
+        self.assertEqual((len(w3), s3['words_whisper_timing']), (6, 6))
+
+    def test_alignment_pairs_words_over_the_file_when_segmentations_differ_and_apostrophes_are_split(self):
+        from types import SimpleNamespace as NS
+        from montage_engine import transcribe_source as ts
+        ww = lambda t, s, e: NS(word=' ' + t, start=s, end=e)
+        # Whisper: one segment, "J" + "'ai" split; the aligner: two sentences with "J'ai" whole
+        whisper = [NS(start=0.0, end=5.0, words=[ww('J', 0.0, 0.1), ww("'ai", 0.1, 0.3), ww('mangé.', 0.4, 0.9), ww('Puis', 2.0, 2.3),
+                                                  ww('m', 2.4, 2.5), ww("'est", 2.5, 2.7), ww('venu.', 2.8, 3.1)])]
+        aligned = [{'start': 0.0, 'end': 1.0, 'words': [{'word': "J'ai", 'start': 0.12, 'end': 0.35}, {'word': 'mangé.', 'start': 0.45, 'end': 0.95}]},
+                   {'start': 2.0, 'end': 3.2, 'words': [{'word': 'Puis', 'start': 2.05, 'end': 2.35}, {'word': "m'est", 'start': 2.45, 'end': 2.75},
+                                                        {'word': 'venu.', 'start': 2.85, 'end': 3.15}]}]
+        words, stats = ts.merge_aligned(whisper, aligned)
+        self.assertEqual([w['w'] for w in words], ["J'ai", 'mangé.', 'Puis', "m'est", 'venu.'])
+        self.assertEqual([w['s'] for w in words], [0.12, 0.45, 2.05, 2.45, 2.85])
+        self.assertEqual(stats, dict(words_whisper_timing=0))
+
+    def test_untimed_aligned_words_are_timed_between_their_neighbours(self):
+        from montage_engine import transcribe_source as ts
+        got = ts.complete_words([{'word': 'En', 'start': 0.1, 'end': 0.3}, {'word': '2026'},
+                                 {'word': 'oui', 'start': 1.0, 'end': 1.2}], 0.0, 2.0)
+        self.assertEqual((got[1]['s'], got[1]['e']), (0.3, 1.0))
 
     def test_silent_ranges(self):
         words = [dict(f0=10, f1=20), dict(f0=22, f1=30), dict(f0=60, f1=70)]
