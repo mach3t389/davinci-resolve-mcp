@@ -7,6 +7,8 @@ timeline is never transcribed again after a cut, and markers can be re-anchored 
 import hashlib
 import json
 import os
+import re
+import time
 from pathlib import Path
 
 from .model import FPS
@@ -28,6 +30,48 @@ def fingerprint(path):
     return dict(size=size, sha1=h.hexdigest())
 
 
+# Whisper invents credits and sign-offs in silent passages (its training data are subtitled videos). These exact
+# phrases are removed from stored transcripts and listed in `removed_phrases` so nothing disappears silently.
+HALLUCINATIONS = [re.compile(p) for p in (
+    r"\bsous-titrage fr\b",
+    r"\bsous-titrage st'? ?\d+\b",
+    r"\bsous-titrage société radio-canada\b",
+    r"\bsous-titres? réalisés? par la communauté d'amara\.org\b",
+    r"\bmerci d'avoir regardé cette vidéo\b",
+)]
+_EDGE = ' .,;:!?\u2026\u00ab\u00bb"\u201c\u201d'
+
+
+def _norm(word):
+    return word.replace('\u2019', "'").lower().strip(_EDGE)
+
+
+def strip_hallucinations(words):
+    """-> (clean words, [{'text','s','e'}] removed). Only the known credit phrases above; a real mention of
+    "sous-titrage" in speech is kept."""
+    toks = [(i, _norm(w['w'])) for i, w in enumerate(words)]
+    toks = [(i, t) for i, t in toks if t]
+    text, spans, pos = '', [], 0
+    for i, t in toks:
+        spans.append((pos, pos + len(t), i))
+        text += t + ' '
+        pos += len(t) + 1
+    drop, removed = set(), []
+    for pat in HALLUCINATIONS:
+        for m in pat.finditer(text):
+            idx = [i for a, b, i in spans if a < m.end() and b > m.start()]
+            if not idx:
+                continue
+            lo, hi = min(idx), max(idx)
+            while hi + 1 < len(words) and not _norm(words[hi + 1]['w']):      # a trailing "?" belongs to the phrase
+                hi += 1
+            if any(k in drop for k in range(lo, hi + 1)):
+                continue
+            drop.update(range(lo, hi + 1))
+            removed.append(dict(text=' '.join(w['w'].strip() for w in words[lo:hi + 1]), s=words[lo]['s'], e=words[hi]['e']))
+    return [w for i, w in enumerate(words) if i not in drop], sorted(removed, key=lambda r: r['s'])
+
+
 class TranscriptStore:
     """Folder of `<media name>.words.json` files."""
 
@@ -40,12 +84,34 @@ class TranscriptStore:
     def save(self, media_path, words, language='fr', model='', aligned=False, fps=None):
         """words: [{'w': 'bonjour', 's': 1.23, 'e': 1.60}] in SOURCE seconds, sorted."""
         self.folder.mkdir(parents=True, exist_ok=True)
+        words, removed = strip_hallucinations(list(words))
         data = dict(schema=SCHEMA, file=Path(media_path).name, fingerprint=fingerprint(media_path), language=language,
                     model=model, aligned=aligned, fps=fps,
                     words=sorted(({'w': w['w'], 's': round(float(w['s']), 3), 'e': round(float(w['e']), 3)}
                                   for w in words), key=lambda w: w['s']))
+        if removed:
+            data['removed_phrases'] = removed
         self._path(media_path).write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding='utf8')
         return data
+
+    def clean(self, min_age_seconds=60):
+        """Remove the known hallucinated phrases from transcripts already stored (never a file written in the last
+        `min_age_seconds`, which a running transcription may still be writing). -> {file: [removed phrases]}."""
+        done = {}
+        for c in sorted(self.folder.glob('*.words.json')):
+            if time.time() - c.stat().st_mtime < min_age_seconds:
+                continue
+            try:
+                data = json.loads(c.read_text(encoding='utf8'))
+            except (OSError, ValueError):
+                continue
+            words, removed = strip_hallucinations(data.get('words', []))
+            if removed:
+                data['words'] = words
+                data['removed_phrases'] = data.get('removed_phrases', []) + removed
+                c.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding='utf8')
+                done[c.name] = [r['text'] for r in removed]
+        return done
 
     def load(self, media_path):
         """Transcript of this media, or None. Matches by name first, then by fingerprint (file renamed/moved)."""

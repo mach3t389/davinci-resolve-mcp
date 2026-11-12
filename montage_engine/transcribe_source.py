@@ -104,7 +104,8 @@ def transcribe(media, language='fr', model_name='large-v3-turbo', align=True, hi
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument('store')
-    ap.add_argument('media', nargs='+')
+    ap.add_argument('media', nargs='*')
+    ap.add_argument('--clean', action='store_true', help='remove known hallucinated phrases from stored transcripts')
     ap.add_argument('--language', default='fr')
     ap.add_argument('--model', default='large-v3-turbo')
     ap.add_argument('--no-align', action='store_true')
@@ -114,6 +115,12 @@ def main(argv=None):
     global DEVICE
     DEVICE = a.device
     store = TranscriptStore(a.store)
+    if a.clean:
+        for name, phrases in store.clean().items():
+            print('cleaned', name, phrases)
+        return
+    if not a.media:
+        ap.error('give at least one media file, or --clean')
     for m in a.media:
         if store.load(m):
             print('skip (already transcribed):', os.path.basename(m))

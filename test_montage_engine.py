@@ -112,6 +112,36 @@ class AnchorsTest(unittest.TestCase):
         gone = snap([clip('audio', 1, 'Audio 1', 0, 40, file=f, src=2000)])
         self.assertEqual(anchors.reanchor_markers(ref, {70: {}}, gone)[1], [70])
 
+    def test_hallucinated_credits_are_removed_and_listed_but_real_speech_stays(self):
+        w = lambda t, s: {'w': t, 's': s, 'e': s + 0.3}
+        words = [w('Oui', 0), w('Sous-titrage', 1), w('FR', 1.4), w('?', 1.7), w('mais', 2), w('le', 3), w('sous-titrage', 3.2),
+                 w('français', 3.6), w('Merci', 5), w("d'avoir", 5.2), w('regardé', 5.4), w('cette', 5.6), w('vidéo.', 5.8)]
+        clean, removed = anchors.strip_hallucinations(words)
+        self.assertEqual([x['w'] for x in clean], ['Oui', 'mais', 'le', 'sous-titrage', 'français'])
+        self.assertEqual([r['text'] for r in removed], ['Sous-titrage FR ?', "Merci d'avoir regardé cette vidéo."])
+        self.assertEqual(removed[0]['s'], 1)
+
+    def test_store_cleans_on_save_and_on_demand_but_not_a_file_being_written(self):
+        import os
+        import time
+        bad = [{'w': 'Bonjour', 's': 0.0, 'e': 0.5}, {'w': 'Sous-titres', 's': 1.0, 'e': 1.3},
+               {'w': 'réalisés', 's': 1.3, 'e': 1.5}, {'w': 'par', 's': 1.5, 'e': 1.6}, {'w': 'la', 's': 1.6, 'e': 1.7},
+               {'w': 'communauté', 's': 1.7, 'e': 2.0}, {'w': "d'Amara.org", 's': 2.0, 'e': 2.5}]
+        data = self.store.save(self.media, bad)
+        self.assertEqual([x['w'] for x in data['words']], ['Bonjour'])
+        self.assertEqual(len(data['removed_phrases']), 1)
+        # a file saved before the filter existed: cleaned on demand once it is old enough
+        path = self.store._path(self.media)
+        raw = json.loads(path.read_text(encoding='utf8'))
+        raw['words'] = [{'w': 'Sous-titrage', 's': 1.0, 'e': 1.2}, {'w': 'FR', 's': 1.2, 'e': 1.4}, {'w': 'ok', 's': 2.0, 'e': 2.2}]
+        raw.pop('removed_phrases')
+        path.write_text(json.dumps(raw), encoding='utf8')
+        self.assertEqual(self.store.clean(min_age_seconds=3600), {})                    # too recent: left alone
+        old = time.time() - 7200
+        os.utime(path, (old, old))
+        self.assertEqual(self.store.clean(min_age_seconds=3600), {path.name: ['Sous-titrage FR']})
+        self.assertEqual([x['w'] for x in json.loads(path.read_text(encoding='utf8'))['words']], ['ok'])
+
     def test_silent_ranges(self):
         words = [dict(f0=10, f1=20), dict(f0=22, f1=30), dict(f0=60, f1=70)]
         self.assertEqual(anchors.silent_ranges(words, 10, start=0, end=100), [(0, 10), (30, 60), (70, 100)])
