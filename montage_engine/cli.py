@@ -3,7 +3,9 @@
   python -m montage_engine.cli check "<timeline>" [--type interview] [--series masterclass] [--waveform]
                                 [--editor "<timeline>"] [--json]
   python -m montage_engine.cli words "<timeline>" <store folder> [--from 00:10 --to 00:40]
-  python -m montage_engine.cli pass <plan.json> [--apply] [--type interview] [--series masterclass]
+  python -m montage_engine.cli pass <plan.json> [--apply] [--type interview] [--series masterclass] [--pauses <store>]
+      --pauses: also shorten the pauses between sentences to cuts.keep_pause_seconds (words from the transcripts).
+      The sound rules of the directives (J cuts, loudness) are applied to the NEW copy when they are set.
       plan.json = {"SRC": "<timeline>", "edits": [{"P": 100, "Q": 124, "D": 0, "text": "..."}], "NEW": "<optional>"}
       Without --apply: only the plan (new length, versions). With --apply: a NEW numbered copy is created from SRC
       (never SRC itself), fades/isolation restored, traceability markers, jump cuts created by the pass marked in
@@ -16,7 +18,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from montage_engine import anchors, checks, panels, passes  # noqa: E402
+from montage_engine import anchors, audio_rules, checks, panels, passes  # noqa: E402
 from montage_engine.model import snapshot_from_resolve, tc  # noqa: E402
 from montage_engine.series import (SERIES, VIDEO_TYPES, explain, missing_roles, resolve_directives,  # noqa: E402
                                    role_of, roles_of)
@@ -71,20 +73,30 @@ def cmd_pass(a):
     plan.setdefault('NEW', passes.next_version_name(list(ts), base, plan.get('action', 'passe moteur')))
     plan.setdefault('expect_end', int(src.GetEndFrame() - src.GetStartFrame()))
     end = plan['expect_end']
+    values, _ = resolve_directives(type_=VIDEO_TYPES.get(a.type), series=SERIES.get(a.series))
+    if a.pauses:
+        words, missing = anchors.place_words(snapshot_from_resolve(src), anchors.TranscriptStore(a.pauses))
+        busy = [(e['P'], max(e['Q'], e['P'] + 1)) for e in plan['edits']]
+        trims = [e for e in audio_rules.plan_pause_trims(words, values)
+                 if not any(e['P'] < b and a0 < e['Q'] for a0, b in busy)]
+        plan['edits'] = plan['edits'] + trims
+        print(f'pauses raccourcies: {len(trims)} (sources sans transcription: {missing})')
+    print('regles du son:', {k: v for k, v in dict(
+        pause=values.get('cuts', {}).get('keep_pause_seconds'), coupe_j=values.get('cuts', {}).get('audio_lead_frames'),
+        lufs=values.get('audio', {}).get('target_lufs')).items() if v is not None} or 'aucune')
     kept, new_end, fwd, back = passes.build_map(plan['edits'], end)
     print(f'{plan["SRC"]} -> {plan["NEW"]}: {end} -> {new_end} images ({new_end - end:+d}, {(new_end - end) / 24:+.1f} s), '
           f'{len(plan["edits"])} modification(s)')
     if not a.apply:
         print('(a blanc: rien n\'est cree; relancer avec --apply)')
         return
-    values, _ = resolve_directives(type_=VIDEO_TYPES.get(a.type), series=SERIES.get(a.series))
     cur = p.GetCurrentTimeline()
     before = snapshot_from_resolve(src)
     prof_b = panels.profiles_for_snapshot(before, role_of)
     rep_b = checks.run_all(before, values, profiles=prof_b)
     work = str(Path(a.work).resolve())
     try:
-        res = passes.run_pass(resolve, p, plan, work)
+        res = passes.run_pass(resolve, p, plan, work, values=values)
         print('passe:', json.dumps(res, ensure_ascii=False))
         new = {t.GetName(): t for t in r.timelines(p)}[plan['NEW']]
         print('restauration:', json.dumps(passes.restore_after_import(p, src, new), ensure_ascii=False, default=str))
@@ -131,6 +143,7 @@ def main(argv=None):
     q.add_argument('--type')
     q.add_argument('--series')
     q.add_argument('--work', default='work/pass')
+    q.add_argument('--pauses', metavar='STORE', help='transcripts folder: shorten pauses to cuts.keep_pause_seconds')
     q.set_defaults(func=cmd_pass)
     w = sub.add_parser('words')
     w.add_argument('timeline')

@@ -14,6 +14,7 @@ Remplace peu à peu les scripts de `montage_tools/` (gardés comme référence :
 | `panels.py` | Fondus d'un rendu **lus** dans son fichier d'infos `<rendu>.mov.motion.json` (le moteur Motion les connaît déjà); mesure ffmpeg de la transparence seulement en repli; sorte de panneau (chapitre ou par-dessus la parole); couverture (plein écran ou partielle); enchaînement des panneaux rapprochés | oui |
 | `cameras.py` | Plan d'alternance des caméras selon les directives (part, durées, jump cuts, zones de fondu) et son application sur une copie | oui (plan); l'application non |
 | `broll.py` | Mini-scènes de b-roll, plans non utilisés rangés après la fin (jamais supprimés) | oui |
+| `audio_rules.py` | Règles du son des directives : pauses raccourcies (`cuts.keep_pause_seconds`), son en avance / coupe en J (`cuts.audio_lead_frames`), niveau sonore (`audio.target_lufs`, via `NormalizeAudioLevel` de Resolve). La baisse de la musique sous la voix n'est pas applicable (pas d'automation du volume dans l'API) | oui (pauses, coupe en J); niveau sonore avec un faux Resolve |
 | `cli.py` | `check` et `words` en ligne de commande | non |
 
 ## Utilisation (Resolve ouvert, scripting externe activé)
@@ -47,6 +48,8 @@ pas dans les valeurs générales. La durée minimale d'un plan (2,5 s) vient du 
 Ces trois niveaux sont les mêmes que ceux des directives de montage de Rushflow (doc 25, section 4).
 
 ## Limites connues
+
+- Règles du son (12 nov. 2026) : codées et testées sans Resolve. Elles s'appliquent à la copie créée par `pass --apply` (`--pauses <dossier Transcriptions>` pour les pauses). Jamais lancées sur une vraie timeline; le moteur lit encore les règles de `series.py`, pas celles enregistrées dans Rushflow.
 
 - Les contrôles ont été validés en lecture seule sur Lili (V3.1 : défaut connu retrouvé; V3.9 et V4.1 : 0 écart image/son).
   Aucune passe qui modifie une timeline n'a encore été lancée sur une vraie copie (`passes.run_pass`, `restore_after_import`,

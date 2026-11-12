@@ -273,8 +273,10 @@ def media_folders_used(project, timeline):
     return used, folders
 
 
-def run_pass(resolve, project, plan, workdir):
+def run_pass(resolve, project, plan, workdir, values=None):
     """plan: {SRC, NEW, edits, expect_end?, force?, map?}. Creates NEW from SRC. Never edits SRC.
+    With the directive `values`, the sound rules are applied to NEW too: J cuts (`cuts.audio_lead_frames`) in the
+    exported timeline, then loudness (`audio.target_lufs`) on the imported copy. See audio_rules.py.
     expect_end = the source length (frames) when the plan was made; a different length means the editor retouched
     the timeline since, so the pass stops (doc 25: always start from the editor's last timeline)."""
     import opentimelineio as otio
@@ -297,6 +299,10 @@ def run_pass(resolve, project, plan, workdir):
     if not src.Export(path_in, resolve.EXPORT_OTIO):
         raise SystemExit('export failed')
     out, info = transform_otio(otio.adapters.read_from_file(path_in), plan['edits'], NEW)
+    lead = dict(moved=[], skipped=[])
+    if values:
+        from .audio_rules import apply_audio_lead
+        out, lead = apply_audio_lead(out, values)
     path_out = os.path.join(workdir, 'pass_out.otio')
     otio.adapters.write_to_file(out, path_out)
     used, folders = media_folders_used(project, src)
@@ -331,9 +337,14 @@ def run_pass(resolve, project, plan, workdir):
                 if hit[0]:
                     x.SetClipColor(hit[0])
                 x.SetClipEnabled(hit[1])
+    loudness = dict(applied=False, reason='no rule')
+    if values:
+        from .audio_rules import normalize_loudness
+        loudness = normalize_loudness(resolve, created, values)
     json.dump(info, open(os.path.join(workdir, plan.get('map', 'pass_map.json')), 'w'), indent=1)
     return dict(name=created.GetName(), frames=int(created.GetEndFrame() - cst), expected=info['NEWEND'],
-                delta_s=round((info['NEWEND'] - info['END']) / FPS, 1), edits=len(info['edits']))
+                delta_s=round((info['NEWEND'] - info['END']) / FPS, 1), edits=len(info['edits']),
+                j_cuts=len(lead['moved']), j_cuts_skipped=len(lead['skipped']), loudness=loudness)
 
 
 def pass_markers(timeline, info, color_removed='Cyan', color_pause='Purple'):
