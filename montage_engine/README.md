@@ -50,6 +50,7 @@ Ces trois niveaux sont les mêmes que ceux des directives de montage de Rushflow
 ## Limites connues
 
 - Règles du son (12 nov. 2026) : codées et testées sans Resolve. Elles s'appliquent à la copie créée par `pass --apply` (`--pauses <dossier Transcriptions>` pour les pauses). Jamais lancées sur une vraie timeline; le moteur lit encore les règles de `series.py`, pas celles enregistrées dans Rushflow.
+- Premier essai réel des règles du son (12 nov. 2026, copie « Lili V4.1 - essai regles du son (a supprimer) », pause 0,5 s, coupe en J 6 images, −14 LUFS) : longueur exacte (−184,5 s, 221 pauses), fondus, isolation et marqueurs remis, niveau sonore appliqué à 391 clips. Mais 553 défauts créés : 308 écarts image/son, car la coupe en J a été posée là où l'image reste sur la même personne (les lèvres ne suivent plus); 111 jump cuts et 158 plans trop courts, car raccourcir une pause coupe dans le même plan sans changer de caméra. À corriger avant usage : coupe en J seulement quand l'image change de sujet (plan d'appui, autre personne), jamais sous la même personne; pauses raccourcies seulement avec un changement de caméra possible et en respectant la durée minimale d'un plan.
 
 - Les contrôles ont été validés en lecture seule sur Lili (V3.1 : défaut connu retrouvé; V3.9 et V4.1 : 0 écart image/son).
   Aucune passe qui modifie une timeline n'a encore été lancée sur une vraie copie (`passes.run_pass`, `restore_after_import`,
