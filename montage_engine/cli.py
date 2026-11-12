@@ -79,10 +79,10 @@ def cmd_pass(a):
         snap_src = snapshot_from_resolve(src)
         words, missing = anchors.place_words(snap_src, anchors.TranscriptStore(a.pauses))
         busy = [(e['P'], max(e['Q'], e['P'] + 1)) for e in plan['edits']]
-        planned = audio_rules.plan_pause_trims(words, values)
+        planned = audio_rules.plan_pause_trims(words, values, camera_runs=audio_rules.camera_runs(snap_src))
         trims = [e for e in audio_rules.outside_overlays(planned, snap_src, lambda n: role_of(n).startswith('camera'))
                  if not any(e['P'] < b and a0 < e['Q'] for a0, b in busy)]
-        print(f'pauses trop longues: {len(planned)}, sous un panneau ou un plan d appui (laissees): {len(planned) - len(trims)}')
+        print(f'pauses raccourcissables (changement de camera possible, plans assez longs): {len(planned)}, sous un panneau ou un plan d appui (laissees): {len(planned) - len(trims)}')
         plan['edits'] = plan['edits'] + trims
         print(f'pauses raccourcies: {len(trims)} (sources sans transcription: {missing})')
     print('regles du son:', {k: v for k, v in dict(

@@ -38,6 +38,23 @@ class PauseTrimTest(unittest.TestCase):
         self.assertEqual(new_end, 400 - (150 - 56))
 
 
+class PauseCameraTest(unittest.TestCase):
+    RULES = dict(cuts=dict(keep_pause_seconds=0.5), cameras=dict(min_shot_seconds=2.5))      # keep 12, shots >= 60
+
+    def test_a_pause_inside_one_shot_is_not_shortened(self):
+        runs = [dict(start=0, end=1000, cam=2)]
+        self.assertEqual(audio_rules.plan_pause_trims([w(0, 100), w(200, 300)], values(**self.RULES), camera_runs=runs), [])
+
+    def test_a_pause_is_shortened_where_the_camera_changes_and_both_shots_stay_long_enough(self):
+        runs = [dict(start=0, end=150, cam=2), dict(start=150, end=1000, cam=1)]
+        edits = audio_rules.plan_pause_trims([w(0, 100), w(200, 300)], values(**self.RULES), camera_runs=runs)
+        self.assertEqual([(e['P'], e['Q']) for e in edits], [(112, 200)])
+
+    def test_a_shot_that_would_become_too_short_keeps_its_pause(self):
+        runs = [dict(start=0, end=150, cam=2), dict(start=150, end=230, cam=1), dict(start=230, end=1000, cam=2)]
+        self.assertEqual(audio_rules.plan_pause_trims([w(0, 100), w(200, 300)], values(**self.RULES), camera_runs=runs), [])
+
+
 class OverlayFilterTest(unittest.TestCase):
     def test_pauses_under_a_panel_or_b_roll_are_left_alone(self):
         from montage_engine.model import Clip, Snapshot
@@ -51,7 +68,8 @@ class OverlayFilterTest(unittest.TestCase):
 
 
 class AudioLeadTest(unittest.TestCase):
-    def timeline(self, second_src=100):
+    def timeline(self, second_src=100, overlay=(150, 200)):
+        """Camera 1 + Audio 1 cut at 200 (a real cut); optional b-roll on its own track over `overlay`."""
         import opentimelineio as otio
         R, TR = otio.opentime.RationalTime, otio.opentime.TimeRange
 
@@ -65,33 +83,46 @@ class AudioLeadTest(unittest.TestCase):
         for t in (v, a):
             t.append(clip('a.mov', 0, 200))
             t.append(clip('b.mov', second_src, 200))
+        broll = otio.schema.Track(name='Plans d appui', kind='Video')
+        if overlay:
+            broll.append(otio.schema.Gap(duration=R(overlay[0], 24)))
+            broll.append(clip('stock.mov', 0, overlay[1] - overlay[0]))
+            broll.append(otio.schema.Gap(duration=R(400 - overlay[1], 24)))
+        else:
+            broll.append(otio.schema.Gap(duration=R(400, 24)))
+        for t in (v, a, broll):
             tl.tracks.append(t)
         return tl
 
-    def lengths(self, tl):
-        return [round(c.source_range.duration.value) for c in tl.tracks[1]]
+    def ranges(self, track):
+        return [(round(c.source_range.start_time.value), round(c.source_range.duration.value)) for c in track
+                if c.name != 'stock.mov' and hasattr(c, 'source_range') and c.source_range]
 
-    def test_the_incoming_sound_starts_before_its_picture(self):
+    def test_under_b_roll_the_next_sentence_is_heard_first_and_picture_stays_with_its_sound(self):
         tl = self.timeline()
         out, info = audio_rules.apply_audio_lead(tl, values(cuts=dict(audio_lead_frames=6)))
         self.assertEqual(info['moved'], [200])
-        a, b = list(out.tracks[1])
-        self.assertEqual(round(a.source_range.duration.value), 194)
-        self.assertEqual((round(b.source_range.start_time.value), round(b.source_range.duration.value)), (94, 206))
-        # pictures do not move, the voice track keeps its length, the source is untouched
-        self.assertEqual([round(c.source_range.duration.value) for c in out.tracks[0]], [200, 200])
-        self.assertEqual(round(out.tracks[1].duration().value), 400)
-        self.assertEqual(self.lengths(tl), [200, 200])
+        cam, voice = out.tracks[0], out.tracks[1]
+        # sound and camera move together: picture = sound everywhere
+        self.assertEqual(self.ranges(cam), [(0, 194), (94, 206)])
+        self.assertEqual(self.ranges(voice), self.ranges(cam))
+        self.assertEqual(round(voice.duration().value), 400)
+        self.assertEqual(self.ranges(tl.tracks[1]), [(0, 200), (100, 200)])     # source untouched
+
+    def test_nothing_moves_when_the_speaker_is_visible(self):
+        out, info = audio_rules.apply_audio_lead(self.timeline(overlay=None), values(cuts=dict(audio_lead_frames=6)))
+        self.assertEqual((info['moved'], info['skipped']), ([], [200]))
+        out, info = audio_rules.apply_audio_lead(self.timeline(overlay=(150, 197)), values(cuts=dict(audio_lead_frames=6)))
+        self.assertEqual(info['moved'], [])                                     # the overlay ends 3 frames too early
 
     def test_a_cut_without_media_before_the_incoming_clip_is_left_alone(self):
         out, info = audio_rules.apply_audio_lead(self.timeline(second_src=2), values(cuts=dict(audio_lead_frames=6)))
         self.assertEqual((info['moved'], info['skipped']), ([], [200]))
-        self.assertEqual(self.lengths(out), [200, 200])
+        self.assertEqual(self.ranges(out.tracks[1]), [(0, 200), (2, 200)])
 
     def test_no_rule_changes_nothing(self):
         out, info = audio_rules.apply_audio_lead(self.timeline(), values())
         self.assertEqual(info['moved'], [])
-        self.assertEqual(self.lengths(out), [200, 200])
 
 
 class LoudnessTest(unittest.TestCase):
