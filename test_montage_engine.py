@@ -142,6 +142,25 @@ class AnchorsTest(unittest.TestCase):
         self.assertEqual(self.store.clean(min_age_seconds=3600), {path.name: ['Sous-titrage FR']})
         self.assertEqual([x['w'] for x in json.loads(path.read_text(encoding='utf8'))['words']], ['ok'])
 
+    def test_unaligned_words_and_segments_keep_their_text(self):
+        from types import SimpleNamespace as NS
+        from montage_engine import transcribe_source as ts
+        ww = lambda t, s, e: NS(word=' ' + t, start=s, end=e)
+        whisper = [NS(start=0.0, end=3.0, words=[ww('En', 0.0, 0.2), ww('2026', 0.3, 0.9), ww('oui', 1.0, 1.3)]),
+                   NS(start=4.0, end=6.0, words=[ww('Je', 4.0, 4.2), ww('reprends', 4.3, 4.9)])]
+        aligned = [{'words': [{'word': 'En', 'start': 0.05, 'end': 0.25}, {'word': '2026'},
+                              {'word': 'oui', 'start': 1.05, 'end': 1.35}]},
+                   {'words': []}]                                       # the aligner failed on the second segment
+        words, fallbacks = ts.merge_aligned(whisper, aligned)
+        self.assertEqual([w['w'] for w in words], ['En', '2026', 'oui', 'Je', 'reprends'])
+        self.assertEqual(fallbacks, 1)
+        year = words[1]
+        self.assertEqual((year['s'], year['e']), (0.25, 1.05))           # timed between its neighbours
+        self.assertEqual(words[3]['s'], 4.0)                              # Whisper's time for the failed segment
+        # segments that cannot be paired: Whisper's words, nothing lost
+        w2, f2 = ts.merge_aligned(whisper, aligned[:1])
+        self.assertEqual(len(w2), 5)
+
     def test_silent_ranges(self):
         words = [dict(f0=10, f1=20), dict(f0=22, f1=30), dict(f0=60, f1=70)]
         self.assertEqual(anchors.silent_ranges(words, 10, start=0, end=100), [(0, 10), (30, 60), (70, 100)])

@@ -75,6 +75,43 @@ def _align_model(language):
     return _MODELS[key]
 
 
+def complete_words(aligned, seg_start, seg_end):
+    """Words of one ALIGNED segment as [{'w','s','e'}]. The aligner leaves some words without times (numbers such as
+    "2026", symbols): they are kept, timed between their neighbours, instead of being dropped."""
+    out = []
+    for k, w in enumerate(aligned):
+        text = (w.get('word') or '').strip()
+        if not text:
+            continue
+        out.append(dict(w=text, s=w.get('start'), e=w.get('end')))
+    for k, w in enumerate(out):
+        if w['s'] is None or w['e'] is None:
+            prev_end = next((out[j]['e'] for j in range(k - 1, -1, -1) if out[j]['e'] is not None), seg_start)
+            nxt_start = next((out[j]['s'] for j in range(k + 1, len(out)) if out[j]['s'] is not None), seg_end)
+            w['s'] = prev_end if w['s'] is None else w['s']
+            w['e'] = max(nxt_start, w['s'] + 0.05) if w['e'] is None else w['e']
+    return out
+
+
+def merge_aligned(whisper_segments, aligned_segments):
+    """Words of the whole file. A segment the aligner could not place (empty `words`) keeps WHISPER's own word times,
+    so no speech is lost. `whisper_segments` are faster-whisper segments; `aligned_segments` the aligner's output,
+    in the same order. -> (words, number of segments that fell back to Whisper's times)."""
+    words, fallbacks = [], 0
+    if len(aligned_segments) != len(whisper_segments):
+        # cannot pair them reliably: keep Whisper's words for everything rather than lose or misplace any
+        return ([dict(w=w.word.strip(), s=w.start, e=w.end) for x in whisper_segments for w in (x.words or [])
+                 if w.word.strip()], len(whisper_segments))
+    for ws, al in zip(whisper_segments, aligned_segments):
+        got = complete_words(al.get('words') or [], ws.start, ws.end)
+        if got:
+            words += got
+        else:
+            fallbacks += 1
+            words += [dict(w=w.word.strip(), s=w.start, e=w.end) for w in (ws.words or []) if w.word.strip()]
+    return words, fallbacks
+
+
 def transcribe(media, language='fr', model_name='large-v3-turbo', align=True, hint=None):
     import whisperx
     with tempfile.TemporaryDirectory() as tmp:
@@ -92,10 +129,11 @@ def transcribe(media, language='fr', model_name='large-v3-turbo', align=True, hi
                 am, meta = _align_model(language)
                 res = whisperx.align([dict(text=x.text, start=x.start, end=x.end) for x in segs], am, meta, audio,
                                      'cpu', return_char_alignments=False)
-                aw = [dict(w=w['word'], s=w['start'], e=w['end']) for s in res['segments'] for w in s.get('words', [])
-                      if 'start' in w and 'end' in w]
+                aw, fallbacks = merge_aligned(segs, res['segments'])
                 if aw:
                     words, aligned = aw, True
+                if fallbacks:
+                    print(f'{fallbacks} segment(s) kept with Whisper timing (alignment failed)', file=sys.stderr)
             except Exception as exc:   # alignment is an improvement, never a blocker
                 print('alignment skipped:', exc, file=sys.stderr)
         return words, aligned
