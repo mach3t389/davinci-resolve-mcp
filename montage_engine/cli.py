@@ -1,6 +1,6 @@
 """Command line for the engine. Read-only unless a pass is requested.
 
-  python -m montage_engine.cli check "<timeline>" [--type interview] [--series masterclass] [--waveform] [--breaths]
+  python -m montage_engine.cli check "<timeline>" [--type interview] [--series masterclass | --rules rules.json] [--waveform] [--breaths]
                                 [--editor "<timeline>"] [--json]
   python -m montage_engine.cli words "<timeline>" <store folder> [--from 00:10 --to 00:40]
   python -m montage_engine.cli pass <plan.json> [--apply] [--type interview] [--series masterclass]
@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from montage_engine import anchors, audio_rules, breaths, checks, panels, passes  # noqa: E402
+from montage_engine import anchors, audio_rules, breaths, checks, panels, passes, rushflow_rules  # noqa: E402
 from montage_engine.model import snapshot_from_resolve, tc  # noqa: E402
 from montage_engine.series import (SERIES, VIDEO_TYPES, explain, missing_roles, resolve_directives,  # noqa: E402
                                    role_of, roles_of)
@@ -34,8 +34,36 @@ def _timeline(name):
     return ts[name]
 
 
+def _rules(a, video_rules=None):
+    """-> (values, provenance, rules): the rules of this run. With --rules <json> they are the ones written in Rushflow
+    (result of get_montage_directives, or a montage job's copy); otherwise the engine's built-in ones (--type/--series).
+    `rules` is None for the built-in ones."""
+    if getattr(a, 'rules', None):
+        if a.type or a.series or video_rules:
+            raise SystemExit('--rules replaces --type, --series and --video-rules: give one or the other.')
+        try:
+            rules = rushflow_rules.load_rules(a.rules)
+        except rushflow_rules.RulesError as exc:
+            raise SystemExit(f'--rules: {exc}')
+        return rules['values'], rules['provenance'], rules
+    values, prov = resolve_directives(type_=VIDEO_TYPES.get(a.type), series=SERIES.get(a.series), video=video_rules)
+    return values, prov, None
+
+
+def _print_rules(rules, values):
+    rows = rushflow_rules.describe_rules(values, rules['provenance'])
+    print('regles de Rushflow:', rushflow_rules.summary(rows))
+    for r in rows:
+        if r['status'] != rushflow_rules.APPLIED:
+            print(f"   {r['status']:9s} {r['rule']} = {r['value']}  ({r['level'] or '?'}) - {r['note']}")
+    if rules['filled']:
+        print(f"   {len(rules['filled'])} regle(s) non fournie(s) par Rushflow : valeur par defaut du moteur")
+    for t in rules['instructions']:
+        print(f"   consigne ({t['level'] or '?'}) a suivre par l'assistant : {t['text'][:140]!r}")
+
+
 def cmd_check(a):
-    values, prov = resolve_directives(type_=VIDEO_TYPES.get(a.type), series=SERIES.get(a.series))
+    values, prov, rules = _rules(a)
     snap = snapshot_from_resolve(_timeline(a.timeline))
     editor = snapshot_from_resolve(_timeline(a.editor)) if a.editor else None
     profiles = panels.profiles_for_snapshot(snap, role_of, measure=a.measure_alpha)
@@ -49,6 +77,8 @@ def cmd_check(a):
         print(json.dumps(report, ensure_ascii=False, indent=1))
         return
     print(f'== {snap.name}  (In-Out to {tc(snap.out_frame, snap.fps)})  type={a.type} series={a.series}')
+    if rules:
+        _print_rules(rules, values)
     print('roles:', report['roles'])
     if report['missing_roles']:
         print('missing roles:', report['missing_roles'])
@@ -75,7 +105,9 @@ def cmd_pass(a):
     plan.setdefault('expect_end', int(src.GetEndFrame() - src.GetStartFrame()))
     end = plan['expect_end']
     video_rules = json.loads(a.video_rules) if a.video_rules else None
-    values, _ = resolve_directives(type_=VIDEO_TYPES.get(a.type), series=SERIES.get(a.series), video=video_rules)
+    values, _, rules = _rules(a, video_rules)
+    if rules:
+        _print_rules(rules, values)
     print('regles du son:', {k: v for k, v in dict(
         pause=values.get('cuts', {}).get('keep_pause_seconds'), coupe_j=values.get('cuts', {}).get('audio_lead_frames'),
         lufs=values.get('audio', {}).get('target_lufs')).items() if v is not None} or 'aucune')
@@ -125,6 +157,7 @@ def main(argv=None):
     c = sub.add_parser('check')
     c.add_argument('timeline')
     c.add_argument('--type')
+    c.add_argument('--rules', help='JSON of the rules written in Rushflow (get_montage_directives result or a job copy)')
     c.add_argument('--series')
     c.add_argument('--waveform', action='store_true')
     c.add_argument('--breaths', action='store_true', help='report breaths left at voice cuts (reads the media, slower)')
@@ -137,6 +170,7 @@ def main(argv=None):
     q.add_argument('plan')
     q.add_argument('--apply', action='store_true')
     q.add_argument('--type')
+    q.add_argument('--rules', help='JSON of the rules written in Rushflow (replaces --type/--series/--video-rules)')
     q.add_argument('--series')
     q.add_argument('--work', default='work/pass')
     q.add_argument('--video-rules', help='JSON directive layer for this video, e.g. {"cuts": {"audio_lead_frames": 6}}')
