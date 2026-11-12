@@ -38,6 +38,18 @@ class PauseTrimTest(unittest.TestCase):
         self.assertEqual(new_end, 400 - (150 - 56))
 
 
+class OverlayFilterTest(unittest.TestCase):
+    def test_pauses_under_a_panel_or_b_roll_are_left_alone(self):
+        from montage_engine.model import Clip, Snapshot
+        from montage_engine.series import role_of
+        panel = Clip(kind='video', track=4, track_name='Motion', start=100, end=200, file='p.mov', name='p.mov', src_start=0)
+        cam = Clip(kind='video', track=1, track_name='Camera 1 (principale)', start=0, end=1000, file='c.mov', name='c.mov', src_start=0)
+        s = Snapshot(clips=[panel, cam], out_frame=1000)
+        edits = [dict(P=150, Q=180, D=0), dict(P=400, Q=450, D=0)]
+        kept = audio_rules.outside_overlays(edits, s, lambda n: role_of(n).startswith('camera'))
+        self.assertEqual([e['P'] for e in kept], [400])
+
+
 class AudioLeadTest(unittest.TestCase):
     def timeline(self, second_src=100):
         import opentimelineio as otio

@@ -73,12 +73,16 @@ def cmd_pass(a):
     plan.setdefault('NEW', passes.next_version_name(list(ts), base, plan.get('action', 'passe moteur')))
     plan.setdefault('expect_end', int(src.GetEndFrame() - src.GetStartFrame()))
     end = plan['expect_end']
-    values, _ = resolve_directives(type_=VIDEO_TYPES.get(a.type), series=SERIES.get(a.series))
+    video_rules = json.loads(a.video_rules) if a.video_rules else None
+    values, _ = resolve_directives(type_=VIDEO_TYPES.get(a.type), series=SERIES.get(a.series), video=video_rules)
     if a.pauses:
-        words, missing = anchors.place_words(snapshot_from_resolve(src), anchors.TranscriptStore(a.pauses))
+        snap_src = snapshot_from_resolve(src)
+        words, missing = anchors.place_words(snap_src, anchors.TranscriptStore(a.pauses))
         busy = [(e['P'], max(e['Q'], e['P'] + 1)) for e in plan['edits']]
-        trims = [e for e in audio_rules.plan_pause_trims(words, values)
+        planned = audio_rules.plan_pause_trims(words, values)
+        trims = [e for e in audio_rules.outside_overlays(planned, snap_src, lambda n: role_of(n).startswith('camera'))
                  if not any(e['P'] < b and a0 < e['Q'] for a0, b in busy)]
+        print(f'pauses trop longues: {len(planned)}, sous un panneau ou un plan d appui (laissees): {len(planned) - len(trims)}')
         plan['edits'] = plan['edits'] + trims
         print(f'pauses raccourcies: {len(trims)} (sources sans transcription: {missing})')
     print('regles du son:', {k: v for k, v in dict(
@@ -143,6 +147,7 @@ def main(argv=None):
     q.add_argument('--type')
     q.add_argument('--series')
     q.add_argument('--work', default='work/pass')
+    q.add_argument('--video-rules', help='JSON directive layer for this video, e.g. {"cuts": {"audio_lead_frames": 6}}')
     q.add_argument('--pauses', metavar='STORE', help='transcripts folder: shorten pauses to cuts.keep_pause_seconds')
     q.set_defaults(func=cmd_pass)
     w = sub.add_parser('words')

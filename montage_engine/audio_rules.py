@@ -36,6 +36,13 @@ def plan_pause_trims(words, values, fps=FPS, min_remove_frames=2):
     return edits
 
 
+def outside_overlays(edits, snapshot, is_camera):
+    """Drop the pause trims that fall under a clip of a non-camera video track (panel, animation, b-roll): those
+    tracks follow their content in a pass, so shortening a pause under them would make them overlap."""
+    covered = [(c.start, c.end) for c in snapshot.clips if c.kind == 'video' and c.has_media and not is_camera(c.track_name)]
+    return [e for e in edits if not any(e['P'] < b and a < e['Q'] for a, b in covered)]
+
+
 # ---- sound ahead of the picture (J cut) -------------------------------------------------------------------------
 def apply_audio_lead(tl, values, fps=FPS):
     """Return (new timeline, moved cuts) where, on the voice track (`tracks.pairs[0][0]`), every cut between two
