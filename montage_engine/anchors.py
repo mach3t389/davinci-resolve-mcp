@@ -72,6 +72,43 @@ def strip_hallucinations(words):
     return [w for i, w in enumerate(words) if i not in drop], sorted(removed, key=lambda r: r['s'])
 
 
+def collapse_loops(words, min_reps=6, keep=3, max_phrase=6):
+    """Whisper sometimes loops: one phrase repeated dozens of times, faster than anyone speaks (C002 of the Lili
+    rushes: "plus loin," 76 times in 28 s). A phrase of 1 to `max_phrase` words repeated at least `min_reps` times in a
+    row is cut back to its first `keep` repetitions. The rest is listed in removed_phrases (kind 'loop', with its times
+    and the number of repetitions) so a human can listen to the passage: real speech may hide under the loop.
+    -> (clean words, [{'kind','text','s','e','repeats'}])."""
+    keys = [_norm(w['w']) for w in words]
+    drop, removed = set(), []
+    i = 0
+    while i < len(words):
+        best = None
+        for n in range(1, max_phrase + 1):
+            reps = 1
+            while i + (reps + 1) * n <= len(words) and keys[i + reps * n:i + (reps + 1) * n] == keys[i:i + n]:
+                reps += 1
+            if reps >= min_reps and (best is None or reps * n > best[0] * best[1]):
+                best = (n, reps)
+        if best:
+            n, reps = best
+            lo, hi = i + keep * n, i + reps * n               # words [lo, hi) are the surplus repetitions
+            drop.update(range(lo, hi))
+            removed.append(dict(kind='loop', text=' '.join(w['w'].strip() for w in words[i:i + n]), s=words[lo]['s'],
+                                e=words[hi - 1]['e'], repeats=reps))
+            i = hi
+        else:
+            i += 1
+    return [w for k, w in enumerate(words) if k not in drop], removed
+
+
+def clean_words(words):
+    """Credits invented by Whisper, then repetition loops. -> (clean words, removed list in time order)."""
+    words, credits = strip_hallucinations(words)
+    words, loops = collapse_loops(words)
+    credits = [dict(kind='credit', **c) for c in credits]
+    return words, sorted(credits + loops, key=lambda r: r['s'])
+
+
 class TranscriptStore:
     """Folder of `<media name>.words.json` files."""
 
@@ -84,7 +121,7 @@ class TranscriptStore:
     def save(self, media_path, words, language='fr', model='', aligned=False, fps=None):
         """words: [{'w': 'bonjour', 's': 1.23, 'e': 1.60}] in SOURCE seconds, sorted."""
         self.folder.mkdir(parents=True, exist_ok=True)
-        words, removed = strip_hallucinations(list(words))
+        words, removed = clean_words(list(words))
         data = dict(schema=SCHEMA, file=Path(media_path).name, fingerprint=fingerprint(media_path), language=language,
                     model=model, aligned=aligned, fps=fps,
                     words=sorted(({'w': w['w'], 's': round(float(w['s']), 3), 'e': round(float(w['e']), 3)}
@@ -105,12 +142,12 @@ class TranscriptStore:
                 data = json.loads(c.read_text(encoding='utf8'))
             except (OSError, ValueError):
                 continue
-            words, removed = strip_hallucinations(data.get('words', []))
+            words, removed = clean_words(data.get('words', []))
             if removed:
                 data['words'] = words
                 data['removed_phrases'] = data.get('removed_phrases', []) + removed
                 c.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding='utf8')
-                done[c.name] = [r['text'] for r in removed]
+                done[c.name] = [r['text'] if r.get('kind') != 'loop' else f"{r['text']} x{r['repeats']} (boucle)" for r in removed]
         return done
 
     def load(self, media_path):

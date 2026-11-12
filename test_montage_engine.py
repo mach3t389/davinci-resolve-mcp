@@ -183,6 +183,26 @@ class AnchorsTest(unittest.TestCase):
                                  {'word': 'oui', 'start': 1.0, 'end': 1.2}], 0.0, 2.0)
         self.assertEqual((got[1]['s'], got[1]['e']), (0.3, 1.0))
 
+    def test_a_whisper_loop_is_cut_back_and_listed_but_real_repeats_stay(self):
+        w = lambda t, s: {'w': t, 's': s, 'e': s + 0.2}
+        loop = [w(x, 10 + k * 0.2) for k, x in enumerate(['plus', 'loin,'] * 40)]
+        words = [w('On', 0), w('va', 0.3)] + loop + [w('Tu', 30), w('peux', 30.3)]
+        clean, removed = anchors.collapse_loops(words)
+        self.assertEqual([x['w'] for x in clean], ['On', 'va'] + ['plus', 'loin,'] * 3 + ['Tu', 'peux'])
+        self.assertEqual(len(removed), 1)
+        self.assertEqual((removed[0]['kind'], removed[0]['repeats'], removed[0]['text']), ('loop', 40, 'plus loin,'))
+        self.assertGreater(removed[0]['e'] - removed[0]['s'], 10)
+        real = [w(x, k * 0.3) for k, x in enumerate(['Non,', 'non,', 'non,', 'non,', 'non.', 'Oui'])]      # 5 repeats: kept
+        self.assertEqual(len(anchors.collapse_loops(real)[0]), 6)
+
+    def test_clean_words_removes_credits_and_loops_and_labels_them(self):
+        w = lambda t, s: {'w': t, 's': s, 'e': s + 0.2}
+        words = ([w('Oui', 0), w('Sous-titrage', 1), w('FR', 1.3)] + [w('plus', 2 + k * 0.2) for k in range(9)]
+                 + [w('fin', 9)])
+        clean, removed = anchors.clean_words(words)
+        self.assertEqual([x['kind'] for x in removed], ['credit', 'loop'])
+        self.assertEqual([x['w'] for x in clean], ['Oui', 'plus', 'plus', 'plus', 'fin'])
+
     def test_silent_ranges(self):
         words = [dict(f0=10, f1=20), dict(f0=22, f1=30), dict(f0=60, f1=70)]
         self.assertEqual(anchors.silent_ranges(words, 10, start=0, end=100), [(0, 10), (30, 60), (70, 100)])
